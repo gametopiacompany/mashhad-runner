@@ -286,6 +286,61 @@ public static class MashhadRunnerArtFactory
         return root;
     }
 
+    /// <summary>Creates a stylized waiting passenger with a lightweight idle animation.</summary>
+    public static GameObject CreateStationPassenger(Vector3 position, int variant)
+    {
+        Color[] coats = { new Color(.12f,.28f,.38f), new Color(.55f,.22f,.14f), new Color(.18f,.34f,.25f), new Color(.38f,.3f,.48f), new Color(.72f,.48f,.22f) };
+        Material coat = CreateMaterial("MR_Passenger_Coat_" + variant, coats[variant % coats.Length], .02f, .22f);
+        Material trousers = CreateMaterial("MR_Passenger_Trousers_" + variant, new Color(.12f,.15f,.18f), .02f, .2f);
+        Material skin = CreateMaterial("MR_Passenger_Skin_" + variant, new Color(.67f,.45f,.32f), 0f, .18f);
+        Material shoes = BusRubber;
+        var root = new GameObject("MR_BRT_Waiting_Passenger");
+        root.transform.position = position;
+        root.transform.rotation = Quaternion.Euler(0f, (variant * 67) % 360, 0f);
+        PassengerShape(root.transform, "Torso", new Vector3(0f,1.12f,0f), new Vector3(.48f,.72f,.3f), coat, PrimitiveType.Capsule);
+        PassengerShape(root.transform, "Head", new Vector3(0f,1.72f,0f), new Vector3(.27f,.31f,.27f), skin, PrimitiveType.Sphere);
+        PassengerShape(root.transform, "Hair", new Vector3(0f,1.88f,0f), new Vector3(.28f,.13f,.28f), CityDark, PrimitiveType.Sphere);
+        for (int side=-1; side<=1; side+=2)
+        {
+            PassengerShape(root.transform, "Leg", new Vector3(side*.13f,.48f,0f), new Vector3(.15f,.58f,.17f), trousers, PrimitiveType.Capsule);
+            PassengerShape(root.transform, "Shoe", new Vector3(side*.13f,.16f,-.04f), new Vector3(.17f,.11f,.29f), shoes, PrimitiveType.Cube);
+            var arm = PassengerShape(root.transform, "Arm", new Vector3(side*.31f,1.12f,.015f), new Vector3(.13f,.57f,.14f), coat, PrimitiveType.Capsule);
+            arm.transform.localRotation = Quaternion.Euler(0f,0f,side*9f);
+        }
+        var motion = root.AddComponent<MashhadAmbientMotion>();
+        motion.motionType = MashhadAmbientMotion.MotionType.Idle;
+        motion.speed = .7f + (variant % 3) * .12f;
+        motion.amplitude = .018f;
+        return root;
+    }
+
+    private static GameObject PassengerShape(Transform parent, string name, Vector3 localPosition, Vector3 scale, Material material, PrimitiveType shape)
+    {
+        var part = GameObject.CreatePrimitive(shape);
+        part.name = name;
+        part.transform.SetParent(parent, false);
+        part.transform.localPosition = localPosition;
+        part.transform.localScale = scale;
+        var collider = part.GetComponent<Collider>();
+        if (collider != null) DestroyObject(collider);
+        part.GetComponent<Renderer>().sharedMaterial = material;
+        part.GetComponent<Renderer>().shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.On;
+        return part;
+    }
+
+    /// <summary>Creates an animated pedestrian passing the station forecourt.</summary>
+    public static GameObject CreateWalkingPedestrian(Vector3 position, int variant, float distance)
+    {
+        var person = CreateStationPassenger(position, variant);
+        person.name = "MR_BRT_Walking_Pedestrian";
+        var motion = person.GetComponent<MashhadAmbientMotion>();
+        motion.motionType = MashhadAmbientMotion.MotionType.Walk;
+        motion.travelDirection = Vector3.right;
+        motion.travelDistance = distance;
+        motion.speed = .32f + (variant % 3) * .06f;
+        return person;
+    }
+
     /// <summary>Creates one detailed 8m BRT shelter module at a world-space position.</summary>
     public static GameObject CreateBrtStation(Vector3 position, int variant)
     {
@@ -392,6 +447,10 @@ public static class MashhadRunnerArtFactory
         Part(root.transform, "Bus_Rear_Window", new Vector3(0f,1.72f,4.43f), new Vector3(1.8f,.78f,.045f), BusGlass);
         Part(root.transform, "Bus_Route_Display", new Vector3(0f,2.02f,-4.49f), new Vector3(.72f,.16f,.035f), Light);
         CombineStaticParts(root);
+        var idleMotion = root.AddComponent<MashhadAmbientMotion>();
+        idleMotion.motionType = MashhadAmbientMotion.MotionType.BusIdle;
+        idleMotion.speed = .55f;
+        idleMotion.amplitude = .012f;
         return root;
     }
 

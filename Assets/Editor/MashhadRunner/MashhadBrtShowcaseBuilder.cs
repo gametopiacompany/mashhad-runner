@@ -71,6 +71,24 @@ public static class MashhadBrtShowcaseBuilder
         MashhadRunnerArtFactory.CreateBrtBus(new Vector3(4.9f,0f,43f), 0);
         MashhadRunnerArtFactory.CreateBrtBus(new Vector3(-4.9f,0f,91f), 1);
 
+        // Waiting passengers bring scale and life to all three platforms.
+        Vector3[] passengerPositions =
+        {
+            new Vector3(-7.55f,.27f,25.6f), new Vector3(-6.85f,.27f,27.8f), new Vector3(-7.55f,.27f,30.1f),
+            new Vector3(-7.55f,.27f,65.8f), new Vector3(-6.85f,.27f,68.2f), new Vector3(-7.55f,.27f,70.4f),
+            new Vector3(7.55f,.27f,105.8f), new Vector3(6.85f,.27f,108.1f), new Vector3(7.55f,.27f,110.4f)
+        };
+        for (int i=0; i<passengerPositions.Length; i++)
+            MashhadRunnerArtFactory.CreateStationPassenger(passengerPositions[i], i);
+
+        // A few pedestrians move along the outer sidewalks, away from the playable BRT lane.
+        for (int i=0; i<6; i++)
+        {
+            float z = 18f + i*25f;
+            float side = (i%2==0) ? -1f : 1f;
+            MashhadRunnerArtFactory.CreateWalkingPedestrian(new Vector3(side*13.1f,0f,z),i+2,2.4f);
+        }
+
         // Mashhad-inspired street wall: varied heights, repeated cypress rhythm and wayfinding.
         for (int z=0; z<160; z+=24)
         {
@@ -85,7 +103,7 @@ public static class MashhadBrtShowcaseBuilder
         }
 
         // Distant landmark is deliberately centered on the corridor's vanishing point.
-        MashhadRunnerArtFactory.CreateShrineSkyline(new Vector3(0f,0f,153f),1.18f);
+        MashhadRunnerArtFactory.CreateShrineSkyline(new Vector3(0f,0f,166f),1.72f);
 
         // Street furniture and low warm practicals reinforce scale and depth.
         for (int z=12; z<180; z+=18)
