@@ -129,15 +129,15 @@ public sealed class RunnerGame : MonoBehaviour
     private void CreateEnvironment()
     {
         RenderSettings.ambientMode = AmbientMode.Trilight;
-        RenderSettings.ambientSkyColor = new Color(0.72f, 0.82f, 0.95f);
-        RenderSettings.ambientEquatorColor = new Color(0.62f, 0.64f, 0.66f);
-        RenderSettings.ambientGroundColor = new Color(0.32f, 0.30f, 0.28f);
-        RenderSettings.fogColor = new Color(0.62f, 0.78f, 0.86f);
+        RenderSettings.ambientSkyColor = new Color(0.82f, 0.78f, 0.68f);
+        RenderSettings.ambientEquatorColor = new Color(0.72f, 0.67f, 0.57f);
+        RenderSettings.ambientGroundColor = new Color(0.34f, 0.29f, 0.23f);
+        RenderSettings.fogColor = new Color(0.78f, 0.70f, 0.57f);
         RenderSettings.fog = true;
-        QualitySettings.shadowDistance = 38f;
+        QualitySettings.shadowDistance = 42f;
         RenderSettings.fogMode = FogMode.Linear;
-        RenderSettings.fogStartDistance = 55f;
-        RenderSettings.fogEndDistance = 150f;
+        RenderSettings.fogStartDistance = 62f;
+        RenderSettings.fogEndDistance = 175f;
         cityCommercialAtlas = Resources.Load<Texture2D>("KenneyCityCommercial/Textures/colormap");
         if (cityCommercialAtlas == null)
         {
@@ -174,20 +174,31 @@ public sealed class RunnerGame : MonoBehaviour
 
         for (int z = Mathf.Max(0, startZ); z < endZ; z += 24)
         {
-            environmentObjects.Add(CreateBox("BRT Left Shelter", new Vector3(-7.2f, 1.35f, z), new Vector3(2f, 2.7f, 8f), new Color(0.25f, 0.48f, 0.62f)));
-            environmentObjects.Add(CreateBox("BRT Left Roof", new Vector3(-7.2f, 3.05f, z), new Vector3(2.4f, 0.25f, 8.4f), new Color(0.9f, 0.55f, 0.18f)));
+            var brtStation = MashhadRunnerArtFactory.CreateBrtStation(new Vector3(-7.2f, 0f, z), z / 24);
+            environmentObjects.Add(brtStation);
             environmentObjects.Add(CreateBox("BRT Right Pole", new Vector3(7.2f, 2f, z), new Vector3(0.18f, 4f, 0.18f), new Color(0.8f, 0.82f, 0.84f)));
         }
+
+        // One original roadside BRT bus per generated environment chunk.
+        var brtBus = MashhadRunnerArtFactory.CreateBrtBus(new Vector3(-5.2f, 0f, startZ + 120f), startZ / EnvironmentChunkLength);
+        environmentObjects.Add(brtBus);
 
         int firstLampZ = Mathf.Max(0, ((startZ + 47) / 48) * 48);
         for (int z = firstLampZ; z < endZ; z += 48)
         {
             int side = (z / 48) % 2 == 0 ? 1 : -1;
-            environmentObjects.Add(CreateArtAsset("KenneyCityRoads/light-square", "Street Light", new Vector3(side * 5.2f, 0f, z), new Vector3(0.7f, 4f, 0.7f)));
+            var streetLight = MashhadRunnerArtFactory.CreateStreetLight(
+                new Vector3(side * 5.2f, 0f, z),
+                z / 48);
+            environmentObjects.Add(streetLight);
 
             if ((z / 48) % 2 == 0)
             {
-                environmentObjects.Add(CreateArtAsset("KenneyCityRoads/traffic-light", "Traffic Light", new Vector3(-side * 5.2f, 0f, z + 12f), new Vector3(1.1f, 4f, 0.8f)));
+                var wayfinding = MashhadRunnerArtFactory.CreateBrtWayfindingSign(
+                    new Vector3(-side * 5.2f, 0f, z + 18f),
+                    (z / 96) % 12 + 1,
+                    -side);
+                environmentObjects.Add(wayfinding);
             }
         }
 
@@ -195,37 +206,34 @@ public sealed class RunnerGame : MonoBehaviour
         for (int z = firstBuildingZ; z < endZ; z += 48)
         {
             int buildingIndex = (z / 48) % 3;
-            int side = (z / 48) % 2 == 0 ? 1 : -1;
-            string buildingAsset = "KenneyCityCommercial/building-" + (char)('a' + buildingIndex);
             float buildingHeight = buildingIndex == 2 ? 12f : 9f;
-            Color buildingTint = buildingIndex == 0
-                ? new Color(0.82f, 0.9f, 0.96f)
-                : buildingIndex == 1
-                    ? new Color(0.9f, 0.94f, 0.86f)
-                    : new Color(0.98f, 0.83f, 0.65f);
-            var building = CreateArtAsset(
-                buildingAsset,
-                "City Building",
-                new Vector3(side * 16f, 0f, z + 64f),
-                new Vector3(6f, buildingHeight, 6f));
-            foreach (var renderer in building.GetComponentsInChildren<Renderer>(true))
+
+            // Original Mashhad-inspired architecture now frames both sides of the BRT corridor.
+            for (int side = -1; side <= 1; side += 2)
             {
-                renderer.shadowCastingMode = ShadowCastingMode.Off;
-                var materials = renderer.materials;
-                foreach (var material in materials)
-                {
-                    if (material.HasProperty("_MainTex"))
-                    {
-                        material.mainTexture = cityCommercialAtlas;
-                    }
-                    if (material.HasProperty("_Color"))
-                    {
-                        material.color = buildingTint;
-                    }
-                }
-                renderer.materials = materials;
+                var building = MashhadRunnerArtFactory.CreateMashhadBuilding(
+                    new Vector3(side * 16f, 0f, z + 64f + (side > 0 ? 0f : 12f)),
+                    buildingHeight,
+                    buildingIndex + (side > 0 ? 0 : 1),
+                    side);
+                environmentObjects.Add(building);
             }
-            environmentObjects.Add(building);
+
+            int treeSide = (z / 48) % 2 == 0 ? 1 : -1;
+            var cypress = MashhadRunnerArtFactory.CreateCypressTree(
+                new Vector3(treeSide * 11.5f, 0f, z + 88f),
+                1f,
+                buildingIndex);
+            environmentObjects.Add(cypress);
+        }
+
+        // A distant shrine silhouette is a skyline landmark only; it adds no collision or gameplay logic.
+        if (startZ == 0 || (startZ / EnvironmentChunkLength) % 2 == 0)
+        {
+            var shrine = MashhadRunnerArtFactory.CreateShrineSkyline(
+                new Vector3(31f, 0f, startZ + 132f),
+                1f);
+            environmentObjects.Add(shrine);
         }
     }
 
@@ -265,8 +273,8 @@ public sealed class RunnerGame : MonoBehaviour
         var cameraObject = new GameObject("Main Camera");
         gameCamera = cameraObject.AddComponent<Camera>();
         gameCamera.clearFlags = CameraClearFlags.SolidColor;
-        gameCamera.backgroundColor = new Color(0.62f, 0.78f, 0.86f);
-        gameCamera.fieldOfView = 60f;
+        gameCamera.backgroundColor = new Color(0.78f, 0.69f, 0.55f);
+        gameCamera.fieldOfView = 58f;
         cameraObject.tag = "MainCamera";
         cameraTransform = cameraObject.transform;
         cameraTransform.position = new Vector3(0f, 5.5f, -9f);

@@ -7,6 +7,15 @@ Vertical-slice prototype for the mobile runner described in the project brief. T
 - Three-lane infinite runner movement
 - Procedurally extended BRT road and obstacle sections with cleanup behind the runner
 - Low-poly road props, a distant city skyline, and character models from CC0 Kenney asset kits
+- Original procedural BRT station modules with layered canopy, glass walls, route signage, seating, tactile platform details, and turquoise/warm-light accents
+- Original roadside BRT bus model with custom body, livery, glazing, doors, mirrors, wheels, grille, and lights
+- Original Mashhad-inspired limestone mid-rises with turquoise tile bands, recessed windows, balconies, parapets, and arched entrances
+- Original cypress street trees and a distant shrine-inspired gold dome/minaret skyline landmark
+- Expanded shrine landmark with layered turquoise iwan, segmented gilded arch, tiled facade panels, stepped gold dome drum and finial, twin detailed minarets, and forecourt arcade columns
+- Original cantilever LED streetlights and custom BRT route wayfinding signs with route numbers and high-contrast labels
+- Refined BRT bus hero prop with front destination board, route number, side identity labels, turquoise lower livery, roof AC housing, wheel hubs, and door framing
+- Warm late-afternoon lighting, atmospheric distance fog, and tuned camera field of view
+- Decorative building, station, bus, tree, streetlight, and landmark meshes are combined by material to reduce mobile draw calls
 - Automatic forward movement
 - Lane switching, jump, and slide
 - Reusable primitive-based BRT environment
@@ -21,12 +30,12 @@ No external assets, brands, copied game content, server, in-app purchase, or rea
 
 ## Open in Unity
 
-1. Install Unity Hub and Unity `2022.1.24f1` (the editor currently used to validate this project; the technical appendix does not mandate a version).
-2. Open this repository as a Unity project.
-3. Open `Assets/Scenes/RunnerPrototype.unity`.
-4. Press **Play** in the Unity Editor.
+1. Install Unity Hub and Unity `2022.1.24f1`.
+2. Open this repository as a Unity project and wait for the first asset import.
+3. Open `Assets/Scenes/RunnerPrototype.unity` for the playable runner prototype, then press **Play**.
+4. Open `Assets/Scenes/MashhadRunner_BRT_ArtShowcase.unity` to review the complete static BRT Mashhad environment from its dedicated showcase camera. This is an art-review scene and does not replace the playable prototype.
 
-The scene can be generated at runtime by `Assets/Scripts/RunnerBootstrap.cs`, so no binary scene asset is required. On first open, wait for Unity to import the project and scripts.
+The playable scene is generated at runtime by `Assets/Scripts/RunnerBootstrap.cs`. The art showcase is a saved scene built from the original procedural assets in `Assets/Scripts/MashhadRunnerArtFactory.cs`. To regenerate it in the Editor, use **Mashhad Runner > Build BRT Mashhad Art Showcase**. The builder creates a separate scene and preserves a currently open saved scene.
 
 ## Controls
 
