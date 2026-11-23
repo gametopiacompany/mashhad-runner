@@ -1,0 +1,16 @@
+.vs/
+.vscode/
+Library/
+Temp/
+Obj/
+Logs/
+Build/
+Builds/
+UserSettings/
+MemoryCaptures/
+*.csproj
+*.sln
+*.user
+*.pidb
+*.booproj
+*.unitypackage
