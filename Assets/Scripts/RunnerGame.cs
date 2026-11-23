@@ -5,7 +5,14 @@ using UnityEngine.Rendering;
 public sealed class RunnerGame : MonoBehaviour
 {
     private const float LaneWidth = 2.2f;
-    private const float RunSpeed = 11f;
+    private const float BaseRunSpeed = 11f;
+    private const float MaxRunSpeed = 17f;
+    private const float SpeedRampPerMeter = 0.004f;
+    private const float JumpVelocity = 8.5f;
+    private const float Gravity = 20f;
+    private const float JumpAirTime = 2f * JumpVelocity / Gravity;
+    private const float MinAgentDistance = 3.2f;
+    private const float MaxAgentDistance = 8f;
     private const int EnvironmentChunkLength = 160;
 
     private readonly List<WorldObject> worldObjects = new List<WorldObject>();
@@ -43,6 +50,20 @@ public sealed class RunnerGame : MonoBehaviour
     private int nextEnvironmentZ = EnvironmentChunkLength;
     private float nextContentStart = 500f;
 
+    private CharacterAnimator playerAnimator;
+    private CharacterAnimator agentAnimator;
+    private Renderer[] playerRenderers = new Renderer[0];
+    private float currentSpeed = BaseRunSpeed;
+    private float jumpBufferTimer;
+    private float shakeTimer;
+    private bool paused;
+    private Vector2 swipeStart;
+    private bool swipeTracking;
+    private bool swipeLeft;
+    private bool swipeRight;
+    private bool swipeUp;
+    private bool swipeDown;
+
     private sealed class WorldObject
     {
         public GameObject gameObject;
@@ -50,6 +71,7 @@ public sealed class RunnerGame : MonoBehaviour
         public int lane;
         public int letterIndex;
         public bool collected;
+        public float baseY;
     }
 
     private void UpdateEnvironment()
@@ -106,8 +128,13 @@ public sealed class RunnerGame : MonoBehaviour
 
     private void CreateEnvironment()
     {
-        RenderSettings.ambientLight = new Color(0.78f, 0.82f, 0.88f);
+        RenderSettings.ambientMode = AmbientMode.Trilight;
+        RenderSettings.ambientSkyColor = new Color(0.72f, 0.82f, 0.95f);
+        RenderSettings.ambientEquatorColor = new Color(0.62f, 0.64f, 0.66f);
+        RenderSettings.ambientGroundColor = new Color(0.32f, 0.30f, 0.28f);
+        RenderSettings.fogColor = new Color(0.62f, 0.78f, 0.86f);
         RenderSettings.fog = true;
+        QualitySettings.shadowDistance = 38f;
         RenderSettings.fogMode = FogMode.Linear;
         RenderSettings.fogStartDistance = 55f;
         RenderSettings.fogEndDistance = 150f;
@@ -120,8 +147,10 @@ public sealed class RunnerGame : MonoBehaviour
         var lightObject = new GameObject("Sun");
         var light = lightObject.AddComponent<Light>();
         light.type = LightType.Directional;
-        light.intensity = 1.1f;
-        light.shadows = LightShadows.None;
+        light.intensity = 1.15f;
+        light.color = new Color(1f, 0.96f, 0.88f);
+        light.shadows = LightShadows.Soft;
+        light.shadowStrength = 0.55f;
         light.transform.rotation = Quaternion.Euler(50f, -30f, 0f);
 
         CreateEnvironmentChunk(-40, nextEnvironmentZ);
@@ -131,15 +160,15 @@ public sealed class RunnerGame : MonoBehaviour
     {
         int chunkLength = endZ - startZ;
         float chunkCenterZ = (startZ + endZ) * 0.5f;
-        environmentObjects.Add(CreateBox("Ground", new Vector3(0f, -0.6f, chunkCenterZ), new Vector3(20f, 1f, chunkLength), new Color(0.22f, 0.24f, 0.26f)));
-        environmentObjects.Add(CreateBox("BRT Road", new Vector3(0f, -0.02f, chunkCenterZ), new Vector3(8f, 0.08f, chunkLength), new Color(0.23f, 0.25f, 0.28f)));
+        environmentObjects.Add(CreateBox("Ground", new Vector3(0f, -0.6f, chunkCenterZ), new Vector3(20f, 1f, chunkLength), new Color(0.22f, 0.24f, 0.26f), false));
+        environmentObjects.Add(CreateBox("BRT Road", new Vector3(0f, -0.02f, chunkCenterZ), new Vector3(8f, 0.08f, chunkLength), new Color(0.23f, 0.25f, 0.28f), false));
 
         for (int z = startZ; z < endZ; z += 8)
         {
             for (int boundaryIndex = 0; boundaryIndex < 4; boundaryIndex++)
             {
                 float x = -1.5f * LaneWidth + boundaryIndex * LaneWidth;
-                environmentObjects.Add(CreateBox("Lane Mark", new Vector3(x, 0.03f, z), new Vector3(0.06f, 0.02f, 3.8f), Color.white));
+                environmentObjects.Add(CreateBox("Lane Mark", new Vector3(x, 0.03f, z), new Vector3(0.06f, 0.02f, 3.8f), Color.white, false));
             }
         }
 
@@ -208,6 +237,9 @@ public sealed class RunnerGame : MonoBehaviour
         playerVisual = CreateArtAsset("KenneyMiniCharacters/character-male-a", "Runner", Vector3.zero, new Vector3(0.9f, 1.8f, 0.7f)).transform;
         playerVisual.SetParent(root.transform, true);
         playerVisualDefaultScale = playerVisual.localScale;
+        playerRenderers = playerVisual.GetComponentsInChildren<Renderer>(true);
+        playerAnimator = playerVisual.gameObject.AddComponent<CharacterAnimator>();
+        playerAnimator.Initialize("KenneyMiniCharacters/character-male-a");
 
         root.AddComponent<BoxCollider>().center = new Vector3(0f, 1f, 0f);
         root.GetComponent<BoxCollider>().size = new Vector3(0.75f, 1.9f, 0.7f);
@@ -222,6 +254,8 @@ public sealed class RunnerGame : MonoBehaviour
         agentVisual = CreateArtAsset("KenneyMiniCharacters/character-worker", "Pursuing Agent", root.transform.position, new Vector3(0.9f, 1.8f, 0.7f)).transform;
         agentVisual.SetParent(root.transform, true);
         agentVisualDefaultScale = agentVisual.localScale;
+        agentAnimator = agentVisual.gameObject.AddComponent<CharacterAnimator>();
+        agentAnimator.Initialize("KenneyMiniCharacters/character-worker");
 
         agent = root.transform;
     }
@@ -232,6 +266,7 @@ public sealed class RunnerGame : MonoBehaviour
         gameCamera = cameraObject.AddComponent<Camera>();
         gameCamera.clearFlags = CameraClearFlags.SolidColor;
         gameCamera.backgroundColor = new Color(0.62f, 0.78f, 0.86f);
+        gameCamera.fieldOfView = 60f;
         cameraObject.tag = "MainCamera";
         cameraTransform = cameraObject.transform;
         cameraTransform.position = new Vector3(0f, 5.5f, -9f);
@@ -297,12 +332,22 @@ public sealed class RunnerGame : MonoBehaviour
             return;
         }
 
+        if (Input.GetKeyDown(KeyCode.P) || Input.GetKeyDown(KeyCode.Escape))
+        {
+            SetPaused(!paused);
+        }
+        if (paused)
+        {
+            return;
+        }
+
         HandleInput();
         UpdateRunner();
         UpdateAgent();
         UpdateEnvironment();
         UpdateContent();
         UpdateWorldObjects();
+        UpdateHitBlink();
 
         if (invulnerableTimer > 0f)
         {
@@ -314,6 +359,17 @@ public sealed class RunnerGame : MonoBehaviour
         }
     }
 
+    private void SetPaused(bool value)
+    {
+        paused = value;
+        Time.timeScale = value ? 0f : 1f;
+        swipeTracking = false;
+        touchLeft = false;
+        touchRight = false;
+        touchJump = false;
+        touchSlide = false;
+    }
+
     private void LateUpdate()
     {
         if (cameraTransform == null || player == null)
@@ -321,29 +377,62 @@ public sealed class RunnerGame : MonoBehaviour
             return;
         }
 
-        var target = new Vector3(0f, 5.5f, player.position.z - 9f);
+        var target = new Vector3(player.position.x * 0.4f, 5.5f, player.position.z - 9f);
         cameraTransform.position = Vector3.Lerp(cameraTransform.position, target, Time.deltaTime * 8f);
+
+        if (shakeTimer > 0f && Time.timeScale > 0f)
+        {
+            shakeTimer -= Time.deltaTime;
+            cameraTransform.position += Random.insideUnitSphere * 0.15f * Mathf.Clamp01(shakeTimer / 0.25f);
+        }
+
         cameraTransform.LookAt(new Vector3(player.position.x, 1f, player.position.z + 6f));
+
+        float speedFactor = Mathf.InverseLerp(BaseRunSpeed, MaxRunSpeed, currentSpeed);
+        gameCamera.fieldOfView = Mathf.Lerp(gameCamera.fieldOfView, 60f + speedFactor * 8f, Time.deltaTime * 2f);
     }
 
     private void HandleInput()
     {
-        if (Input.GetKeyDown(KeyCode.A) || Input.GetKeyDown(KeyCode.LeftArrow) || touchLeft)
+        ReadSwipe();
+
+        bool left = Input.GetKeyDown(KeyCode.A) || Input.GetKeyDown(KeyCode.LeftArrow) || touchLeft || swipeLeft;
+        bool right = Input.GetKeyDown(KeyCode.D) || Input.GetKeyDown(KeyCode.RightArrow) || touchRight || swipeRight;
+        bool jump = Input.GetKeyDown(KeyCode.W) || Input.GetKeyDown(KeyCode.UpArrow) || Input.GetKeyDown(KeyCode.Space) || touchJump || swipeUp;
+        bool slide = Input.GetKey(KeyCode.S) || Input.GetKey(KeyCode.DownArrow) || Input.GetKey(KeyCode.LeftControl) || touchSlide || swipeDown;
+
+        if (left)
         {
             lane = Mathf.Max(-1, lane - 1);
         }
-        if (Input.GetKeyDown(KeyCode.D) || Input.GetKeyDown(KeyCode.RightArrow) || touchRight)
+        if (right)
         {
             lane = Mathf.Min(1, lane + 1);
         }
-        if ((Input.GetKeyDown(KeyCode.W) || Input.GetKeyDown(KeyCode.UpArrow) || Input.GetKeyDown(KeyCode.Space) || touchJump)
-            && player.position.y <= 0.01f)
+
+        // A jump pressed slightly before landing is remembered, so quick inputs do not get dropped.
+        if (jump)
         {
-            verticalVelocity = 8.5f;
+            jumpBufferTimer = 0.14f;
         }
-        if (Input.GetKey(KeyCode.S) || Input.GetKey(KeyCode.DownArrow) || Input.GetKey(KeyCode.LeftControl) || touchSlide)
+        if (jumpBufferTimer > 0f)
+        {
+            jumpBufferTimer -= Time.deltaTime;
+            if (player.position.y <= 0.05f && Mathf.Abs(verticalVelocity) < 0.01f)
+            {
+                verticalVelocity = JumpVelocity;
+                jumpBufferTimer = 0f;
+            }
+        }
+
+        if (slide)
         {
             slideTimer = 0.55f;
+            // Sliding while airborne drops the runner quickly to the ground.
+            if (player.position.y > 0.3f && verticalVelocity > -14f)
+            {
+                verticalVelocity = -14f;
+            }
         }
 
         touchLeft = false;
@@ -352,14 +441,54 @@ public sealed class RunnerGame : MonoBehaviour
         touchSlide = false;
     }
 
+    private void ReadSwipe()
+    {
+        swipeLeft = false;
+        swipeRight = false;
+        swipeUp = false;
+        swipeDown = false;
+
+        float threshold = Mathf.Max(40f, Screen.height * 0.03f);
+        if (Input.GetMouseButtonDown(0))
+        {
+            swipeStart = Input.mousePosition;
+            swipeTracking = true;
+        }
+        else if (swipeTracking && Input.GetMouseButton(0))
+        {
+            Vector2 delta = (Vector2)Input.mousePosition - swipeStart;
+            if (delta.magnitude >= threshold)
+            {
+                if (Mathf.Abs(delta.x) > Mathf.Abs(delta.y))
+                {
+                    swipeLeft = delta.x < 0f;
+                    swipeRight = delta.x > 0f;
+                }
+                else
+                {
+                    swipeUp = delta.y > 0f;
+                    swipeDown = delta.y < 0f;
+                }
+                swipeTracking = false;
+            }
+        }
+
+        if (Input.GetMouseButtonUp(0))
+        {
+            swipeTracking = false;
+        }
+    }
+
     private void UpdateRunner()
     {
-        distance += RunSpeed * Time.deltaTime;
-        var targetPosition = new Vector3(lane * LaneWidth, player.position.y, distance);
+        currentSpeed = Mathf.Min(MaxRunSpeed, BaseRunSpeed + distance * SpeedRampPerMeter);
+        distance += currentSpeed * Time.deltaTime;
+        float targetX = lane * LaneWidth;
+        var targetPosition = new Vector3(targetX, player.position.y, distance);
 
         if (player.position.y > 0f || verticalVelocity > 0f)
         {
-            verticalVelocity -= 20f * Time.deltaTime;
+            verticalVelocity -= Gravity * Time.deltaTime;
             targetPosition.y = Mathf.Max(0f, player.position.y + verticalVelocity * Time.deltaTime);
             if (targetPosition.y <= 0f)
             {
@@ -371,20 +500,58 @@ public sealed class RunnerGame : MonoBehaviour
         if (slideTimer > 0f)
         {
             slideTimer -= Time.deltaTime;
-            playerVisual.localScale = Vector3.Lerp(playerVisual.localScale, Vector3.Scale(playerVisualDefaultScale, new Vector3(1f, 0.55f, 1.2f)), Time.deltaTime * 14f);
-            playerVisual.localPosition = Vector3.zero;
-        }
-        else
-        {
-            playerVisual.localScale = Vector3.Lerp(playerVisual.localScale, playerVisualDefaultScale, Time.deltaTime * 14f);
-            playerVisual.localPosition = Vector3.zero;
         }
 
+        bool animated = playerAnimator != null && playerAnimator.IsReady;
+        if (!animated)
+        {
+            // Fallback when the FBX clips cannot be loaded: squash the model instead.
+            var scaleTarget = slideTimer > 0f
+                ? Vector3.Scale(playerVisualDefaultScale, new Vector3(1f, 0.55f, 1.2f))
+                : playerVisualDefaultScale;
+            playerVisual.localScale = Vector3.Lerp(playerVisual.localScale, scaleTarget, Time.deltaTime * 14f);
+        }
+        playerVisual.localPosition = Vector3.zero;
+
+        float lateral = targetX - player.position.x;
         player.position = Vector3.Lerp(player.position, targetPosition, Time.deltaTime * 12f);
 
-        if (playerVisual != null)
+        // Lean into lane changes.
+        playerVisual.localRotation = Quaternion.Euler(0f, Mathf.Clamp(lateral * 10f, -20f, 20f), Mathf.Clamp(-lateral * 6f, -12f, 12f));
+
+        if (animated)
         {
-            playerVisual.localRotation = Quaternion.Euler(0f, Mathf.Sin(Time.time * 12f) * 4f, Mathf.Sin(Time.time * 12f) * 3f);
+            bool airborne = Mathf.Abs(verticalVelocity) > 0.01f || player.position.y > 0.08f;
+            if (airborne)
+            {
+                playerAnimator.SetState(CharacterState.Jump, JumpAirTime);
+            }
+            else if (slideTimer > 0f)
+            {
+                playerAnimator.SetState(CharacterState.Slide);
+            }
+            else
+            {
+                playerAnimator.SetState(CharacterState.Run);
+            }
+            playerAnimator.RunSpeedScale = currentSpeed / BaseRunSpeed;
+        }
+    }
+
+    private void UpdateHitBlink()
+    {
+        bool visible = invulnerableTimer <= 0f || Mathf.FloorToInt(Time.time * 14f) % 2 == 0;
+        SetPlayerVisible(visible);
+    }
+
+    private void SetPlayerVisible(bool visible)
+    {
+        foreach (var playerRenderer in playerRenderers)
+        {
+            if (playerRenderer != null)
+            {
+                playerRenderer.enabled = visible;
+            }
         }
     }
 
@@ -394,17 +561,25 @@ public sealed class RunnerGame : MonoBehaviour
         float targetX = Mathf.Lerp(agent.position.x, player.position.x, Time.deltaTime * 2f);
         agent.position = new Vector3(targetX, 0f, targetZ);
 
-        if (agentDistance > 3.2f)
+        if (agentDistance > MinAgentDistance)
         {
             agentDistance -= Time.deltaTime * 0.16f;
         }
 
-        if (agent.position.z >= player.position.z - 3.2f && invulnerableTimer <= 0f)
+        if (agent.position.z >= player.position.z - MinAgentDistance && invulnerableTimer <= 0f)
         {
             HitObstacle();
         }
 
-        agentVisual.localScale = Vector3.Scale(agentVisualDefaultScale, Vector3.one + Vector3.up * Mathf.Abs(Mathf.Sin(Time.time * 7f)) * 0.04f);
+        if (agentAnimator != null && agentAnimator.IsReady)
+        {
+            agentAnimator.SetState(CharacterState.Run);
+            agentAnimator.RunSpeedScale = currentSpeed / BaseRunSpeed;
+        }
+        else
+        {
+            agentVisual.localScale = Vector3.Scale(agentVisualDefaultScale, Vector3.one + Vector3.up * Mathf.Abs(Mathf.Sin(Time.time * 7f)) * 0.04f);
+        }
     }
 
     private void UpdateWorldObjects()
@@ -427,7 +602,11 @@ public sealed class RunnerGame : MonoBehaviour
 
             if (item.kind == WorldObjectKind.Coin)
             {
-                item.gameObject.transform.Rotate(Vector3.up, 180f * Time.deltaTime);
+                var coinTransform = item.gameObject.transform;
+                coinTransform.Rotate(Vector3.up, 180f * Time.deltaTime, Space.World);
+                var coinPosition = coinTransform.position;
+                coinPosition.y = item.baseY + Mathf.Sin(Time.time * 4f + coinPosition.z) * 0.1f;
+                coinTransform.position = coinPosition;
             }
 
             if (item.gameObject.transform.position.z < player.position.z - 12f)
@@ -472,8 +651,9 @@ public sealed class RunnerGame : MonoBehaviour
     private void HitObstacle()
     {
         invulnerableTimer = 1.5f;
+        shakeTimer = 0.25f;
         lives--;
-        agentDistance = 8f;
+        agentDistance = MaxAgentDistance;
         if (lives <= 0)
         {
             EndRun();
@@ -509,10 +689,21 @@ public sealed class RunnerGame : MonoBehaviour
             PlayerPrefs.Save();
         }
         gameOver = true;
+        shakeTimer = 0.4f;
+        SetPlayerVisible(true);
+        if (playerAnimator != null)
+        {
+            playerAnimator.SetState(CharacterState.Hit, 0.9f);
+        }
+        if (agentAnimator != null)
+        {
+            agentAnimator.SetState(CharacterState.Idle);
+        }
     }
 
     private void RestartRun()
     {
+        Time.timeScale = 1f;
         UnityEngine.SceneManagement.SceneManager.LoadScene(UnityEngine.SceneManagement.SceneManager.GetActiveScene().buildIndex);
     }
 
@@ -527,8 +718,9 @@ public sealed class RunnerGame : MonoBehaviour
         lives = 1;
         distance = Mathf.Max(0f, safeDistance - 20f);
         player.position = new Vector3(player.position.x, 0f, distance);
-        agentDistance = 8f;
+        agentDistance = MaxAgentDistance;
         invulnerableTimer = 3f;
+        verticalVelocity = 0f;
         gameOver = false;
 
         foreach (var item in worldObjects)
@@ -553,14 +745,22 @@ public sealed class RunnerGame : MonoBehaviour
         GUI.Label(new Rect(24, 168, 420, 44), "DISTANCE  " + Mathf.FloorToInt(distance) + " m");
         GUI.Label(new Rect(24, 216, 420, 44), "BEST  " + bestDistance + " m");
 
+        DrawThreatMeter();
+
+        float screenWidth = Screen.width / scale;
+        if (!gameOver && GUI.Button(new Rect(screenWidth - 190f, 24f, 166f, 80f), paused ? "RESUME" : "PAUSE"))
+        {
+            SetPaused(!paused);
+        }
+
         float buttonWidth = 170f;
         float buttonHeight = 96f;
         float bottom = 1920f - buttonHeight - 38f;
-        if (GUI.RepeatButton(new Rect(20, bottom, buttonWidth, buttonHeight), "LEFT"))
+        if (GUI.Button(new Rect(20, bottom, buttonWidth, buttonHeight), "LEFT"))
         {
             touchLeft = true;
         }
-        if (GUI.RepeatButton(new Rect(210, bottom, buttonWidth, buttonHeight), "RIGHT"))
+        if (GUI.Button(new Rect(210, bottom, buttonWidth, buttonHeight), "RIGHT"))
         {
             touchRight = true;
         }
@@ -571,6 +771,20 @@ public sealed class RunnerGame : MonoBehaviour
         if (GUI.Button(new Rect(890, bottom, buttonWidth, buttonHeight), "SLIDE"))
         {
             touchSlide = true;
+        }
+
+        if (paused && !gameOver)
+        {
+            GUI.Box(new Rect(screenWidth * 0.5f - 260f, 650f, 520f, 380f), "");
+            GUI.Label(new Rect(screenWidth * 0.5f - 210f, 710f, 420f, 100f), "PAUSED");
+            if (GUI.Button(new Rect(screenWidth * 0.5f - 210f, 800f, 420f, 100f), "RESUME"))
+            {
+                SetPaused(false);
+            }
+            if (GUI.Button(new Rect(screenWidth * 0.5f - 210f, 920f, 420f, 100f), "RESTART"))
+            {
+                RestartRun();
+            }
         }
 
         if (gameOver)
@@ -588,6 +802,47 @@ public sealed class RunnerGame : MonoBehaviour
         }
     }
 
+    private void DrawThreatMeter()
+    {
+        // Four-level pursuit warning, matching the GDD's agent-distance states.
+        float closeness = 1f - Mathf.InverseLerp(MinAgentDistance, MaxAgentDistance, agentDistance);
+        string label;
+        Color color;
+        if (closeness < 0.3f)
+        {
+            label = "CALM";
+            color = new Color(0.35f, 0.8f, 0.45f);
+        }
+        else if (closeness < 0.6f)
+        {
+            label = "WARNING";
+            color = new Color(0.95f, 0.8f, 0.2f);
+        }
+        else if (closeness < 0.85f)
+        {
+            label = "DANGER";
+            color = new Color(0.95f, 0.5f, 0.15f);
+        }
+        else
+        {
+            label = "CRITICAL";
+            color = new Color(0.9f, 0.2f, 0.2f);
+        }
+
+        float scale = Mathf.Clamp(Mathf.Min(Screen.width / 1080f, Screen.height / 1920f), 0.75f, 1.35f);
+        float centerX = Screen.width / scale * 0.5f;
+        var back = new Rect(centerX - 170f, 40f, 340f, 24f);
+        var fill = new Rect(back.x + 2f, back.y + 2f, (back.width - 4f) * Mathf.Clamp01(closeness), back.height - 4f);
+
+        Color previous = GUI.color;
+        GUI.color = new Color(0f, 0f, 0f, 0.55f);
+        GUI.DrawTexture(back, Texture2D.whiteTexture);
+        GUI.color = color;
+        GUI.DrawTexture(fill, Texture2D.whiteTexture);
+        GUI.color = previous;
+        GUI.Label(new Rect(back.x, back.yMax + 4f, back.width, 40f), "AGENT  " + label);
+    }
+
     private void SpawnCoinLine(float z, int laneIndex, int count)
     {
         for (int i = 0; i < count; i++)
@@ -600,7 +855,7 @@ public sealed class RunnerGame : MonoBehaviour
     {
         var visual = CreateCylinder("Coin", position, 0.32f, 0.08f, new Color(1f, 0.72f, 0.12f)).transform;
         visual.rotation = Quaternion.Euler(90f, 0f, 0f);
-        worldObjects.Add(new WorldObject { gameObject = visual.gameObject, kind = WorldObjectKind.Coin, lane = LaneFromPosition(position.x) });
+        worldObjects.Add(new WorldObject { gameObject = visual.gameObject, kind = WorldObjectKind.Coin, lane = LaneFromPosition(position.x), baseY = position.y });
     }
 
     private void SpawnLetter(float z, int laneIndex, int letterIndex)
@@ -635,14 +890,16 @@ public sealed class RunnerGame : MonoBehaviour
         return Mathf.Clamp(Mathf.RoundToInt(x / LaneWidth), -1, 1);
     }
 
-    private static GameObject CreateBox(string name, Vector3 position, Vector3 size, Color color)
+    private static GameObject CreateBox(string name, Vector3 position, Vector3 size, Color color, bool castShadows = true)
     {
         var box = GameObject.CreatePrimitive(PrimitiveType.Cube);
         Destroy(box.GetComponent<Collider>());
         box.name = name;
         box.transform.position = position;
         box.transform.localScale = size;
-        box.GetComponent<Renderer>().material = CreateMaterial(color);
+        var boxRenderer = box.GetComponent<Renderer>();
+        boxRenderer.material = CreateMaterial(color);
+        boxRenderer.shadowCastingMode = castShadows ? ShadowCastingMode.On : ShadowCastingMode.Off;
         return box;
     }
 
@@ -735,6 +992,10 @@ public sealed class RunnerGame : MonoBehaviour
         }
         var material = new Material(shader);
         material.color = color;
+        if (material.HasProperty("_Glossiness"))
+        {
+            material.SetFloat("_Glossiness", 0.12f);
+        }
         Materials.Add(color, material);
         return material;
     }
