@@ -49,6 +49,11 @@ public sealed class RunnerGame : MonoBehaviour
     private bool touchSlide;
     private int nextEnvironmentZ = EnvironmentChunkLength;
     private float nextContentStart = 500f;
+    private Light sunLight;
+    private RouteZone currentZone = RouteZone.Brt;
+    private string zoneToast = string.Empty;
+    private float zoneToastTimer;
+    private float shrineLook;
 
     private CharacterAnimator playerAnimator;
     private CharacterAnimator agentAnimator;
@@ -76,7 +81,7 @@ public sealed class RunnerGame : MonoBehaviour
 
     private void UpdateEnvironment()
     {
-        while (player.position.z + 120f >= nextEnvironmentZ)
+        while (player.position.z + 260f >= nextEnvironmentZ)
         {
             int endZ = nextEnvironmentZ + EnvironmentChunkLength;
             CreateEnvironmentChunk(nextEnvironmentZ, endZ);
@@ -90,6 +95,7 @@ public sealed class RunnerGame : MonoBehaviour
             {
                 if (environmentObject != null)
                 {
+                    ReleaseInstancedMaterials(environmentObject);
                     Destroy(environmentObject);
                 }
                 environmentObjects.RemoveAt(i);
@@ -129,15 +135,10 @@ public sealed class RunnerGame : MonoBehaviour
     private void CreateEnvironment()
     {
         RenderSettings.ambientMode = AmbientMode.Trilight;
-        RenderSettings.ambientSkyColor = new Color(0.72f, 0.82f, 0.95f);
-        RenderSettings.ambientEquatorColor = new Color(0.62f, 0.64f, 0.66f);
-        RenderSettings.ambientGroundColor = new Color(0.32f, 0.30f, 0.28f);
-        RenderSettings.fogColor = new Color(0.62f, 0.78f, 0.86f);
         RenderSettings.fog = true;
         QualitySettings.shadowDistance = 38f;
         RenderSettings.fogMode = FogMode.Linear;
-        RenderSettings.fogStartDistance = 55f;
-        RenderSettings.fogEndDistance = 150f;
+        ApplyAtmosphere(RouteMap.Profile(RouteZone.Brt));
         cityCommercialAtlas = Resources.Load<Texture2D>("KenneyCityCommercial/Textures/colormap");
         if (cityCommercialAtlas == null)
         {
@@ -152,33 +153,93 @@ public sealed class RunnerGame : MonoBehaviour
         light.shadows = LightShadows.Soft;
         light.shadowStrength = 0.55f;
         light.transform.rotation = Quaternion.Euler(50f, -30f, 0f);
+        sunLight = light;
 
         CreateEnvironmentChunk(-40, nextEnvironmentZ);
+        while (nextEnvironmentZ < 280)
+        {
+            int endZ = nextEnvironmentZ + EnvironmentChunkLength;
+            CreateEnvironmentChunk(nextEnvironmentZ, endZ);
+            nextEnvironmentZ = endZ;
+        }
     }
 
-    private void CreateEnvironmentChunk(int startZ, int endZ)
+    private void ApplyAtmosphere(Atmosphere atmosphere)
     {
-        int chunkLength = endZ - startZ;
-        float chunkCenterZ = (startZ + endZ) * 0.5f;
-        environmentObjects.Add(CreateBox("Ground", new Vector3(0f, -0.6f, chunkCenterZ), new Vector3(20f, 1f, chunkLength), new Color(0.22f, 0.24f, 0.26f), false));
-        environmentObjects.Add(CreateBox("BRT Road", new Vector3(0f, -0.02f, chunkCenterZ), new Vector3(8f, 0.08f, chunkLength), new Color(0.23f, 0.25f, 0.28f), false));
-
-        for (int z = startZ; z < endZ; z += 8)
+        RenderSettings.ambientSkyColor = atmosphere.ambientSky;
+        RenderSettings.ambientEquatorColor = atmosphere.ambientEquator;
+        RenderSettings.ambientGroundColor = atmosphere.ambientGround;
+        RenderSettings.fogColor = atmosphere.fog;
+        RenderSettings.fogStartDistance = atmosphere.fogStart;
+        RenderSettings.fogEndDistance = atmosphere.fogEnd;
+        if (sunLight != null)
         {
-            for (int boundaryIndex = 0; boundaryIndex < 4; boundaryIndex++)
+            sunLight.color = atmosphere.sunColor;
+            sunLight.intensity = atmosphere.sunIntensity;
+        }
+        if (gameCamera != null)
+        {
+            gameCamera.backgroundColor = atmosphere.fog;
+        }
+    }
+
+    /// <summary>Blends light and fog toward the zone just ahead of the runner and announces new zones.</summary>
+    private void UpdateZone()
+    {
+        var ahead = RouteMap.ZoneAt(player.position.z + 30f);
+        var target = RouteMap.Profile(ahead);
+        var current = new Atmosphere
+        {
+            fog = RenderSettings.fogColor,
+            ambientSky = RenderSettings.ambientSkyColor,
+            ambientEquator = RenderSettings.ambientEquatorColor,
+            ambientGround = RenderSettings.ambientGroundColor,
+            sunColor = sunLight != null ? sunLight.color : target.sunColor,
+            fogStart = RenderSettings.fogStartDistance,
+            fogEnd = RenderSettings.fogEndDistance,
+            sunIntensity = sunLight != null ? sunLight.intensity : target.sunIntensity
+        };
+        ApplyAtmosphere(Atmosphere.Lerp(current, target, Mathf.Clamp01(Time.deltaTime * 2.5f)));
+
+        var here = RouteMap.ZoneAt(player.position.z);
+        if (here != currentZone)
+        {
+            currentZone = here;
+            zoneToast = RouteMap.Name(here);
+            zoneToastTimer = 3f;
+        }
+        if (zoneToastTimer > 0f)
+        {
+            zoneToastTimer -= Time.deltaTime;
+        }
+
+        // Tilt the camera up while the shrine rises over the end of the BRT road.
+        int portal = RouteMap.NextPortalZ(player.position.z);
+        float wanted = 0f;
+        if (portal > 0)
+        {
+            float distanceToPortal = portal - player.position.z;
+            wanted = Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(230f, 120f, distanceToPortal)) * Mathf.InverseLerp(10f, 40f, distanceToPortal);
+        }
+        shrineLook = Mathf.MoveTowards(shrineLook, wanted, Time.deltaTime * 0.8f);
+    }
+
+    private static void ReleaseInstancedMaterials(GameObject root)
+    {
+        foreach (var renderer in root.GetComponentsInChildren<Renderer>(true))
+        {
+            foreach (var material in renderer.sharedMaterials)
             {
-                float x = -1.5f * LaneWidth + boundaryIndex * LaneWidth;
-                environmentObjects.Add(CreateBox("Lane Mark", new Vector3(x, 0.03f, z), new Vector3(0.06f, 0.02f, 3.8f), Color.white, false));
+                if (material != null && material.name.EndsWith("(Instance)"))
+                {
+                    Destroy(material);
+                }
             }
         }
+    }
 
-        for (int z = Mathf.Max(0, startZ); z < endZ; z += 24)
-        {
-            environmentObjects.Add(CreateBox("BRT Left Shelter", new Vector3(-7.2f, 1.35f, z), new Vector3(2f, 2.7f, 8f), new Color(0.25f, 0.48f, 0.62f)));
-            environmentObjects.Add(CreateBox("BRT Left Roof", new Vector3(-7.2f, 3.05f, z), new Vector3(2.4f, 0.25f, 8.4f), new Color(0.9f, 0.55f, 0.18f)));
-            environmentObjects.Add(CreateBox("BRT Right Pole", new Vector3(7.2f, 2f, z), new Vector3(0.18f, 4f, 0.18f), new Color(0.8f, 0.82f, 0.84f)));
-        }
-
+    private void AddBrtAssets(int startZ, int endZ)
+    {
         int firstLampZ = Mathf.Max(0, ((startZ + 47) / 48) * 48);
         for (int z = firstLampZ; z < endZ; z += 48)
         {
@@ -191,42 +252,62 @@ public sealed class RunnerGame : MonoBehaviour
             }
         }
 
-        int firstBuildingZ = Mathf.Max(0, ((startZ + 47) / 48) * 48);
-        for (int z = firstBuildingZ; z < endZ; z += 48)
+        for (int z = firstLampZ; z < endZ; z += 48)
         {
-            int buildingIndex = (z / 48) % 3;
-            int side = (z / 48) % 2 == 0 ? 1 : -1;
-            string buildingAsset = "KenneyCityCommercial/building-" + (char)('a' + buildingIndex);
-            float buildingHeight = buildingIndex == 2 ? 12f : 9f;
-            Color buildingTint = buildingIndex == 0
-                ? new Color(0.82f, 0.9f, 0.96f)
-                : buildingIndex == 1
-                    ? new Color(0.9f, 0.94f, 0.86f)
-                    : new Color(0.98f, 0.83f, 0.65f);
-            var building = CreateArtAsset(
-                buildingAsset,
-                "City Building",
-                new Vector3(side * 16f, 0f, z + 64f),
-                new Vector3(6f, buildingHeight, 6f));
-            foreach (var renderer in building.GetComponentsInChildren<Renderer>(true))
-            {
-                renderer.shadowCastingMode = ShadowCastingMode.Off;
-                var materials = renderer.materials;
-                foreach (var material in materials)
-                {
-                    if (material.HasProperty("_MainTex"))
-                    {
-                        material.mainTexture = cityCommercialAtlas;
-                    }
-                    if (material.HasProperty("_Color"))
-                    {
-                        material.color = buildingTint;
-                    }
-                }
-                renderer.materials = materials;
-            }
-            environmentObjects.Add(building);
+            AddBrtBuilding(z);
         }
+    }
+
+    private void CreateEnvironmentChunk(int startZ, int endZ)
+    {
+        var zone = RouteMap.ZoneAt(Mathf.Max(0, startZ));
+        environmentObjects.Add(EnvironmentFactory.Build(zone, startZ, endZ));
+
+        if (zone == RouteZone.Brt)
+        {
+            AddBrtAssets(startZ, endZ);
+        }
+
+        if (RouteMap.HasShrine(startZ))
+        {
+            environmentObjects.Add(ShrineComplex.Build(startZ));
+        }
+    }
+
+    private void AddBrtBuilding(int z)
+    {
+        int buildingIndex = (z / 48) % 3;
+        int side = (z / 48) % 2 == 0 ? 1 : -1;
+        string buildingAsset = "KenneyCityCommercial/building-" + (char)('a' + buildingIndex);
+        float buildingHeight = buildingIndex == 2 ? 12f : 9f;
+        Color buildingTint = buildingIndex == 0
+            ? new Color(0.82f, 0.9f, 0.96f)
+            : buildingIndex == 1
+                ? new Color(0.9f, 0.94f, 0.86f)
+                : new Color(0.98f, 0.83f, 0.65f);
+        var building = CreateArtAsset(
+            buildingAsset,
+            "City Building",
+            new Vector3(side * 16f, 0f, z + 64f),
+            new Vector3(6f, buildingHeight, 6f));
+        foreach (var renderer in building.GetComponentsInChildren<Renderer>(true))
+        {
+            renderer.shadowCastingMode = ShadowCastingMode.Off;
+            var materials = renderer.materials;
+            foreach (var material in materials)
+            {
+                if (material.HasProperty("_MainTex"))
+                {
+                    material.mainTexture = cityCommercialAtlas;
+                }
+                if (material.HasProperty("_Color"))
+                {
+                    material.color = buildingTint;
+                }
+            }
+            renderer.materials = materials;
+        }
+        environmentObjects.Add(building);
     }
 
     private void CreatePlayer()
@@ -277,6 +358,11 @@ public sealed class RunnerGame : MonoBehaviour
     {
         for (float z = startZ; z < endZ; z += 9f)
         {
+            if (RouteMap.IsTransitionSafe(z))
+            {
+                continue;
+            }
+
             int pattern = Mathf.FloorToInt(z / 9f) % 8;
             int firstLane = (pattern + 1) % 3 - 1;
 
@@ -345,6 +431,7 @@ public sealed class RunnerGame : MonoBehaviour
         UpdateRunner();
         UpdateAgent();
         UpdateEnvironment();
+        UpdateZone();
         UpdateContent();
         UpdateWorldObjects();
         UpdateHitBlink();
@@ -386,7 +473,7 @@ public sealed class RunnerGame : MonoBehaviour
             cameraTransform.position += Random.insideUnitSphere * 0.15f * Mathf.Clamp01(shakeTimer / 0.25f);
         }
 
-        cameraTransform.LookAt(new Vector3(player.position.x, 1f, player.position.z + 6f));
+        cameraTransform.LookAt(new Vector3(player.position.x, Mathf.Lerp(1f, 22f, shrineLook), player.position.z + Mathf.Lerp(6f, 60f, shrineLook)));
 
         float speedFactor = Mathf.InverseLerp(BaseRunSpeed, MaxRunSpeed, currentSpeed);
         gameCamera.fieldOfView = Mathf.Lerp(gameCamera.fieldOfView, 60f + speedFactor * 8f, Time.deltaTime * 2f);
@@ -746,6 +833,13 @@ public sealed class RunnerGame : MonoBehaviour
         GUI.Label(new Rect(24, 216, 420, 44), "BEST  " + bestDistance + " m");
 
         DrawThreatMeter();
+
+        if (zoneToastTimer > 0f && !gameOver)
+        {
+            var toastStyle = new GUIStyle(GUI.skin.label) { alignment = TextAnchor.MiddleCenter, fontSize = 44, fontStyle = FontStyle.Bold };
+            toastStyle.normal.textColor = new Color(1f, 1f, 1f, Mathf.Clamp01(zoneToastTimer));
+            GUI.Label(new Rect(0f, 300f, Screen.width / scale, 80f), zoneToast, toastStyle);
+        }
 
         float screenWidth = Screen.width / scale;
         if (!gameOver && GUI.Button(new Rect(screenWidth - 190f, 24f, 166f, 80f), paused ? "RESUME" : "PAUSE"))
