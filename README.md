@@ -1,11 +1,12 @@
 # Mashhad Runner
 
-Vertical-slice prototype for the mobile runner described in the project brief. The current prototype is an original, self-contained Unity implementation for the agreed BRT environment scope.
+Vertical-slice prototype for the mobile runner described in the project brief. The current prototype is an original, self-contained Unity implementation centered on a Mashhad-inspired BRT route.
 
 ## What is included
 
 - Three-lane infinite runner movement
-- Procedurally extended BRT road and obstacle sections with cleanup behind the runner
+- Procedurally generated BRT, underpass, metro, and ring-road route zones with cleanup behind the runner
+- An Imam Reza shrine landmark, procedural sky dome, soft clouds, and layered mountain horizon
 - Low-poly road props, a distant city skyline, and character models from CC0 Kenney asset kits
 - Automatic forward movement
 - Lane switching, jump, and slide
@@ -55,4 +56,4 @@ Android settings in `ProjectSettings/ProjectSettings.asset` use portrait orienta
 
 ## Placeholder decision boundaries
 
-The technical appendix leaves the final environments, visual style, exact Unity version, test devices, frame-rate/size target, and advertising details blank. This prototype therefore uses only the confirmed BRT environment, a generic replaceable city skyline, and clearly replaceable primitives. It does not invent additional environments or advanced advertising services.
+The technical appendix leaves the final environments, visual style, exact Unity version, test devices, frame-rate/size target, and advertising details blank. The current route zones, skyline, shrine landmark, and sky are original, replaceable prototype visuals rather than a finalized art direction. No advanced advertising services are included.
