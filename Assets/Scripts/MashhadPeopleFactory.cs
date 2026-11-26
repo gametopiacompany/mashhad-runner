@@ -44,6 +44,11 @@ public static class MashhadPeopleFactory
 
     public static GameObject Create(Transform parent, Vector3 localPosition, float localYaw, int variant, Pose pose)
     {
+        return Build(parent, localPosition, localYaw, variant, pose, true);
+    }
+
+    private static GameObject Build(Transform parent, Vector3 localPosition, float localYaw, int variant, Pose pose, bool lifelike)
+    {
         int v = Mathf.Abs(variant);
         Material coat = Mat("MR_P_Coat_" + (v % Coats.Length), Coats[v % Coats.Length], 0f);
         Material trousers = Mat("MR_P_Trousers", new Color(0.12f, 0.14f, 0.18f), 0f);
@@ -122,12 +127,19 @@ public static class MashhadPeopleFactory
         motion.motionType = MashhadAmbientMotion.MotionType.Idle;
         motion.speed = 0.6f + (v % 3) * 0.12f;
         motion.amplitude = 0.012f;
+
+        if (lifelike)
+        {
+            var life = root.AddComponent<MashhadPassengerLife>();
+            life.seated = seated;
+            life.mode = phone ? MashhadPassengerLife.Mode.Phone : (paper ? MashhadPassengerLife.Mode.Paper : MashhadPassengerLife.Mode.Standing);
+        }
         return root;
     }
 
     public static GameObject CreateWalker(Transform parent, Vector3 localPosition, int variant, float distance)
     {
-        GameObject person = Create(parent, localPosition, 0f, variant, Pose.Standing);
+        GameObject person = Build(parent, localPosition, 0f, variant, Pose.Standing, false);
         var motion = person.GetComponent<MashhadAmbientMotion>();
         motion.motionType = MashhadAmbientMotion.MotionType.Walk;
         motion.travelDirection = Vector3.forward;
