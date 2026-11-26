@@ -238,76 +238,15 @@ public sealed class RunnerGame : MonoBehaviour
         }
     }
 
-    private void AddBrtAssets(int startZ, int endZ)
-    {
-        int firstLampZ = Mathf.Max(0, ((startZ + 47) / 48) * 48);
-        for (int z = firstLampZ; z < endZ; z += 48)
-        {
-            int side = (z / 48) % 2 == 0 ? 1 : -1;
-            environmentObjects.Add(CreateArtAsset("KenneyCityRoads/light-square", "Street Light", new Vector3(side * 5.2f, 0f, z), new Vector3(0.7f, 4f, 0.7f)));
-
-            if ((z / 48) % 2 == 0)
-            {
-                environmentObjects.Add(CreateArtAsset("KenneyCityRoads/traffic-light", "Traffic Light", new Vector3(-side * 5.2f, 0f, z + 12f), new Vector3(1.1f, 4f, 0.8f)));
-            }
-        }
-
-        for (int z = firstLampZ; z < endZ; z += 48)
-        {
-            AddBrtBuilding(z);
-        }
-    }
-
     private void CreateEnvironmentChunk(int startZ, int endZ)
     {
         var zone = RouteMap.ZoneAt(Mathf.Max(0, startZ));
         environmentObjects.Add(EnvironmentFactory.Build(zone, startZ, endZ));
 
-        if (zone == RouteZone.Brt)
-        {
-            AddBrtAssets(startZ, endZ);
-        }
-
         if (RouteMap.HasShrine(startZ))
         {
             environmentObjects.Add(ShrineComplex.Build(startZ));
         }
-    }
-
-    private void AddBrtBuilding(int z)
-    {
-        int buildingIndex = (z / 48) % 3;
-        int side = (z / 48) % 2 == 0 ? 1 : -1;
-        string buildingAsset = "KenneyCityCommercial/building-" + (char)('a' + buildingIndex);
-        float buildingHeight = buildingIndex == 2 ? 12f : 9f;
-        Color buildingTint = buildingIndex == 0
-            ? new Color(0.82f, 0.9f, 0.96f)
-            : buildingIndex == 1
-                ? new Color(0.9f, 0.94f, 0.86f)
-                : new Color(0.98f, 0.83f, 0.65f);
-        var building = CreateArtAsset(
-            buildingAsset,
-            "City Building",
-            new Vector3(side * 16f, 0f, z + 64f),
-            new Vector3(6f, buildingHeight, 6f));
-        foreach (var renderer in building.GetComponentsInChildren<Renderer>(true))
-        {
-            renderer.shadowCastingMode = ShadowCastingMode.Off;
-            var materials = renderer.materials;
-            foreach (var material in materials)
-            {
-                if (material.HasProperty("_MainTex"))
-                {
-                    material.mainTexture = cityCommercialAtlas;
-                }
-                if (material.HasProperty("_Color"))
-                {
-                    material.color = buildingTint;
-                }
-            }
-            renderer.materials = materials;
-        }
-        environmentObjects.Add(building);
     }
 
     private void CreatePlayer()

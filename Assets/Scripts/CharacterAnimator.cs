@@ -56,6 +56,18 @@ public sealed class CharacterAnimator : MonoBehaviour
 
     public bool IsReady { get; private set; }
 
+    /// <summary>The state that is currently active (read-only).</summary>
+    public CharacterState State
+    {
+        get { return current; }
+    }
+
+    /// <summary>When true, requests for the Jump state are ignored and the run loop keeps playing (a procedural jump pose is layered on top).</summary>
+    public bool SuppressJump { get; set; }
+
+    /// <summary>Extra multiplier for the run clip speed, used to slow the stride while airborne.</summary>
+    public float RunSpeedMultiplier { get; set; } = 1f;
+
     /// <summary>Multiplies the playback speed of the looping run clip (1 = authored speed).</summary>
     public float RunSpeedScale { get; set; } = 1f;
 
@@ -139,6 +151,10 @@ public sealed class CharacterAnimator : MonoBehaviour
         {
             return;
         }
+        if (state == CharacterState.Jump && SuppressJump)
+        {
+            return;
+        }
 
         var entry = entries[IndexOf(state)];
         if (entry == null)
@@ -173,7 +189,7 @@ public sealed class CharacterAnimator : MonoBehaviour
             weights[i] = Mathf.MoveTowards(weights[i], target, step);
             total += weights[i];
 
-            float speed = States[i] == CharacterState.Run ? RunSpeedScale : entry.speed;
+            float speed = States[i] == CharacterState.Run ? RunSpeedScale * RunSpeedMultiplier : entry.speed;
             entry.playable.SetSpeed(speed);
 
             if (entry.loop && entry.clip.length > 0.01f)

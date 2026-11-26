@@ -147,78 +147,8 @@ public static class EnvironmentFactory
 
     private static void Brt(MeshBatcher b, int s, int e)
     {
-        float c = (s + e) * 0.5f;
-        float length = e - s;
-        var sidewalk = new Color(0.72f, 0.70f, 0.66f);
-        var joint = new Color(0.55f, 0.53f, 0.5f);
-        var curb = new Color(0.85f, 0.38f, 0.2f);
-        var hedge = new Color(0.16f, 0.38f, 0.2f);
-
         RoadBase(b, s, e, new Color(0.22f, 0.24f, 0.27f), 26f, new Color(0.40f, 0.40f, 0.38f), 0.3f);
         LaneMarks(b, s, e, new Color(0.92f, 0.92f, 0.9f));
-
-        for (int side = -1; side <= 1; side += 2)
-        {
-            b.Box(V(side * 7.2f, 0.07f, c), V(5.6f, 0.3f, length), sidewalk, 0.08f);
-            b.Box(V(side * 4.35f, 0.1f, c), V(0.3f, 0.36f, length), curb, 0.2f);
-            b.Box(V(side * 10.2f, 0.45f, c), V(1f, 0.9f, length), hedge, 0.05f);
-
-            for (int z = s; z < e; z += 4)
-            {
-                b.Box(V(side * 7.2f, 0.225f, z), V(5.6f, 0.01f, 0.06f), joint);
-            }
-            for (int z = s; z < e; z += 8)
-            {
-                b.Box(V(side * 4.18f, 0.3f, z + 1f), V(0.05f, 0.08f, 0.5f), Amber, 0.2f, 0.8f);
-            }
-        }
-
-        for (int z = s; z < e; z += 16)
-        {
-            int side = (Mathf.Abs(z / 16) % 2 == 0) ? 1 : -1;
-            Tree(b, side * 9f, z + 8f, z);
-        }
-
-        for (int k = Mathf.FloorToInt(s / 48f); k * 48 < e; k++)
-        {
-            float sz = k * 48 + 36;
-            if (sz < s || sz >= e || sz < 20f)
-            {
-                continue;
-            }
-            Station(b, sz, (k % 2 == 0) ? -1 : 1);
-        }
-
-        for (int k = Mathf.FloorToInt(s / 64f); k * 64 < e; k++)
-        {
-            float bz = k * 64 + 40;
-            if (bz < s || bz >= e || bz < 30f)
-            {
-                continue;
-            }
-            Billboard(b, bz, (k % 2 == 0) ? 1 : -1, k);
-        }
-
-        if (RouteMap.IsZoneStart(s))
-        {
-            Gantry(b, "BRT", Mathf.Max(s, 0) + 30f, new Color(0.08f, 0.28f, 0.5f), 0.28f, 6.4f);
-        }
-
-        if (RouteMap.IsZoneEnd(e))
-        {
-            for (float z = e - 70f; z < e - 8f; z += 10f)
-            {
-                bool green = ((int)(z / 10f)) % 2 == 0;
-                for (int side = -1; side <= 1; side += 2)
-                {
-                    b.Box(V(side * 4.9f, 3f, z), V(0.1f, 6f, 0.1f), new Color(0.8f, 0.82f, 0.84f), 0.5f);
-                    b.Box(V(side * 4.9f, 5.4f, z + 0.35f), V(0.04f, 1f, 0.7f), green ? new Color(0.05f, 0.5f, 0.25f) : Gold, 0.3f, 0.2f);
-                }
-            }
-        }
-
-        Skyline(b, s, e, 28f, 14f, 40f, new Color(0.55f, 0.62f, 0.7f), new Color(0.72f, 0.7f, 0.64f), new Color(0.25f, 0.4f, 0.55f), 0.1f, WarmWhite);
-        Hills(b, s, e, new Color(0.52f, 0.5f, 0.46f));
     }
 
     private static void Station(MeshBatcher b, float sz, int side)

@@ -5,15 +5,17 @@ Vertical-slice prototype for the mobile runner described in the project brief. T
 ## What is included
 
 - Three-lane infinite runner movement
-- Procedurally generated BRT, underpass, metro, and ring-road route zones with cleanup behind the runner
+- A detailed, replaceable BRT street corridor leading to the shrine entrance, followed by the shrine underpass, metro tunnel, and ring-road exit
+- Procedurally generated route zones with cleanup behind the runner; the BRT art layer is restricted to BRT segments
 - An Imam Reza shrine landmark, procedural sky dome, soft clouds, and layered mountain horizon
 - Low-poly road props, a distant city skyline, and character models from CC0 Kenney asset kits
 - Automatic forward movement
 - Lane switching, jump, and slide
-- Reusable primitive-based BRT environment
+- Original, procedural BRT buildings, street props, shrine gateway, and walkers; simple placeholders remain easy to replace
 - Coins and collectible letters for the `BRT` word
 - Obstacles and simple vehicles
 - A player character and a pursuing agent with basic animation
+- Original runtime-generated chase music with an in-game toggle
 - Collision, lives, records, and safe-point continue
 - One rewarded-ad continue placeholder per run
 - On-screen runtime HUD and controls
