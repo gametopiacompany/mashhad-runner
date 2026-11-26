@@ -5,6 +5,37 @@ using UnityEngine.Rendering;
 public static class MashhadMaterials
 {
     private static readonly Dictionary<string, Material> cache = new Dictionary<string, Material>();
+    private static Shader vertexShader;
+    private static Material sharedVertexMaterial;
+    private static bool vertexChecked;
+
+    /// <summary>The single-material vertex colour shader, or null when it is missing or not supported on this device.</summary>
+    public static Shader VertexShader
+    {
+        get
+        {
+            if (!vertexChecked)
+            {
+                vertexChecked = true;
+                Shader s = Shader.Find("Mashhad/VertexColorLit");
+                if (s != null && s.isSupported) vertexShader = s;
+            }
+            return vertexShader;
+        }
+    }
+
+    public static Material SharedVertexMaterial
+    {
+        get
+        {
+            if (sharedVertexMaterial == null && VertexShader != null)
+            {
+                sharedVertexMaterial = new Material(VertexShader);
+                sharedVertexMaterial.name = "MR_VertexColorLit";
+            }
+            return sharedVertexMaterial;
+        }
+    }
 
     public static Material Get(string name, Color color, float metallic, float smoothness, float emission)
     {
@@ -31,7 +62,11 @@ public static class MashhadMaterials
     }
 }
 
-/// <summary>Collects boxes, cylinders and ellipsoids into one mesh per material. Visual only.</summary>
+/// <summary>
+/// Collects boxes, cylinders and ellipsoids. Build() merges everything into ONE mesh that uses the shared
+/// vertex colour material (one draw call, dynamic-batching friendly). If that shader is unavailable it falls back
+/// to one mesh per material. Visual only.
+/// </summary>
 public sealed class MashhadMeshBatch
 {
     private sealed class Part
@@ -170,11 +205,74 @@ public sealed class MashhadMeshBatch
             Mathf.Cos(lat) * Mathf.Sin(lon) * radii.z);
     }
 
+    private static void Describe(Material m, out Color color, out float metallic, out float smooth, out float emission)
+    {
+        color = m.HasProperty("_Color") ? m.color : Color.white;
+        metallic = m.HasProperty("_Metallic") ? m.GetFloat("_Metallic") : 0f;
+        smooth = m.HasProperty("_Glossiness") ? m.GetFloat("_Glossiness") : 0.3f;
+        emission = 0f;
+        if (m.HasProperty("_EmissionColor"))
+        {
+            Color e = m.GetColor("_EmissionColor");
+            float em = Mathf.Max(e.r, Mathf.Max(e.g, e.b));
+            float cm = Mathf.Max(0.001f, Mathf.Max(color.r, Mathf.Max(color.g, color.b)));
+            emission = Mathf.Clamp(em / cm, 0f, 3f);
+        }
+    }
+
     public GameObject Build(string name, Transform parent, bool castShadows)
     {
         var root = new GameObject(name);
         if (parent != null) root.transform.SetParent(parent, false);
         var cleanup = root.AddComponent<ShrineMeshCleanup>();
+
+        Material shared = parts.Count > 0 ? MashhadMaterials.SharedVertexMaterial : null;
+        if (shared != null)
+        {
+            var vertices = new List<Vector3>();
+            var colors = new List<Color>();
+            var uvs = new List<Vector2>();
+            var triangles = new List<int>();
+            foreach (var pair in parts)
+            {
+                Color c;
+                float metallic;
+                float smooth;
+                float emission;
+                Describe(pair.Key, out c, out metallic, out smooth, out emission);
+                Color vertexColor = new Color(c.r, c.g, c.b, 1f - Mathf.Clamp01(emission / 3f));
+                Vector2 uv = new Vector2(metallic, smooth);
+                int offset = vertices.Count;
+                Part part = pair.Value;
+                for (int i = 0; i < part.vertices.Count; i++)
+                {
+                    vertices.Add(part.vertices[i]);
+                    colors.Add(vertexColor);
+                    uvs.Add(uv);
+                }
+                for (int i = 0; i < part.triangles.Count; i++) triangles.Add(part.triangles[i] + offset);
+            }
+
+            var mesh = new Mesh();
+            mesh.name = name;
+            mesh.indexFormat = IndexFormat.UInt32;
+            mesh.SetVertices(vertices);
+            mesh.SetColors(colors);
+            mesh.SetUVs(0, uvs);
+            mesh.SetTriangles(triangles, 0);
+            mesh.RecalculateNormals();
+            mesh.RecalculateBounds();
+            cleanup.Register(mesh);
+
+            root.AddComponent<MeshFilter>().sharedMesh = mesh;
+            var mergedRenderer = root.AddComponent<MeshRenderer>();
+            mergedRenderer.sharedMaterial = shared;
+            mergedRenderer.shadowCastingMode = castShadows ? ShadowCastingMode.On : ShadowCastingMode.Off;
+            mergedRenderer.receiveShadows = castShadows;
+            parts.Clear();
+            return root;
+        }
+
         foreach (var pair in parts)
         {
             var mesh = new Mesh();

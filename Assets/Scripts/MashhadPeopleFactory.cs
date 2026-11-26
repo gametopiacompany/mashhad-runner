@@ -1,6 +1,9 @@
 using UnityEngine;
 
-/// <summary>Stylised people for the BRT stations and sidewalks. Visual only, colliders removed.</summary>
+/// <summary>
+/// Stylised low-poly people for the BRT stations and sidewalks. Every body part is a tiny mesh that shares the
+/// vertex colour material, so hundreds of people batch into a few draw calls. Visual only, no colliders.
+/// </summary>
 public static class MashhadPeopleFactory
 {
     public enum Pose { Standing, Phone, Newspaper, SeatedPhone, SeatedNewspaper }
@@ -29,17 +32,25 @@ public static class MashhadPeopleFactory
         return go.transform;
     }
 
-    private static void Part(Transform parent, PrimitiveType shape, string name, Vector3 position, Vector3 scale, Vector3 euler, Material material)
+    private static void Place(Transform parent, string name, MashhadMeshBatch batch, Vector3 position, Vector3 euler)
     {
-        var go = GameObject.CreatePrimitive(shape);
-        go.name = name;
-        go.transform.SetParent(parent, false);
+        GameObject go = batch.Build(name, parent, false);
         go.transform.localPosition = position;
-        go.transform.localScale = scale;
         go.transform.localRotation = Quaternion.Euler(euler);
-        var collider = go.GetComponent<Collider>();
-        if (collider != null) Object.Destroy(collider);
-        go.GetComponent<Renderer>().sharedMaterial = material;
+    }
+
+    private static void Blob(Transform parent, string name, Vector3 position, Vector3 euler, Vector3 radii, Material material)
+    {
+        var batch = new MashhadMeshBatch();
+        batch.Ellipsoid(material, Vector3.zero, radii, 4, 8, false);
+        Place(parent, name, batch, position, euler);
+    }
+
+    private static void Slab(Transform parent, string name, Vector3 position, Vector3 euler, Vector3 size, Material material)
+    {
+        var batch = new MashhadMeshBatch();
+        batch.Box(material, Vector3.zero, size);
+        Place(parent, name, batch, position, euler);
     }
 
     public static GameObject Create(Transform parent, Vector3 localPosition, float localYaw, int variant, Pose pose)
@@ -77,49 +88,49 @@ public static class MashhadPeopleFactory
             string tag = side < 0 ? "L" : "R";
             if (seated)
             {
-                Part(t, PrimitiveType.Capsule, "Thigh", new Vector3(side * 0.1f, 0.05f, 0.22f), new Vector3(0.16f, 0.22f, 0.16f), new Vector3(90f, 0f, 0f), trousers);
-                Part(t, PrimitiveType.Capsule, "Shin", new Vector3(side * 0.1f, -0.25f, 0.44f), new Vector3(0.14f, 0.25f, 0.14f), Vector3.zero, trousers);
-                Part(t, PrimitiveType.Cube, "Shoe", new Vector3(side * 0.1f, -0.5f, 0.5f), new Vector3(0.14f, 0.08f, 0.26f), Vector3.zero, shoe);
+                Blob(t, "Thigh", new Vector3(side * 0.1f, 0.05f, 0.22f), new Vector3(90f, 0f, 0f), new Vector3(0.08f, 0.22f, 0.08f), trousers);
+                Blob(t, "Shin", new Vector3(side * 0.1f, -0.25f, 0.44f), Vector3.zero, new Vector3(0.07f, 0.25f, 0.07f), trousers);
+                Slab(t, "Shoe", new Vector3(side * 0.1f, -0.5f, 0.5f), Vector3.zero, new Vector3(0.14f, 0.08f, 0.26f), shoe);
             }
             else
             {
                 Transform legPivot = Pivot(t, "LegPivot_" + tag, new Vector3(side * 0.1f, 0.9f, 0f));
-                Part(legPivot, PrimitiveType.Capsule, "Leg", new Vector3(0f, -0.44f, 0f), new Vector3(0.16f, 0.43f, 0.16f), Vector3.zero, trousers);
-                Part(legPivot, PrimitiveType.Cube, "Shoe", new Vector3(0f, -0.85f, 0.05f), new Vector3(0.14f, 0.08f, 0.26f), Vector3.zero, shoe);
+                Blob(legPivot, "Leg", new Vector3(0f, -0.44f, 0f), Vector3.zero, new Vector3(0.08f, 0.43f, 0.08f), trousers);
+                Slab(legPivot, "Shoe", new Vector3(0f, -0.85f, 0.05f), Vector3.zero, new Vector3(0.14f, 0.08f, 0.26f), shoe);
             }
 
             Vector3 shoulder = new Vector3(side * 0.25f, 1.45f + yo, 0f);
             if (!bowed)
             {
                 Transform armPivot = Pivot(t, "ArmPivot_" + tag, shoulder);
-                Part(armPivot, PrimitiveType.Capsule, "Arm", new Vector3(0f, -0.25f, 0f), new Vector3(0.11f, 0.3f, 0.11f), Vector3.zero, coat);
+                Blob(armPivot, "Arm", new Vector3(0f, -0.25f, 0f), Vector3.zero, new Vector3(0.055f, 0.3f, 0.055f), coat);
             }
             else
             {
                 Vector3 hand = paper ? new Vector3(side * 0.2f, 1.26f + yo, 0.29f) : new Vector3(side * 0.07f, 1.27f + yo, 0.3f);
                 Vector3 dir = hand - shoulder;
                 Quaternion q = Quaternion.FromToRotation(Vector3.up, dir);
-                Part(t, PrimitiveType.Capsule, "Arm", (hand + shoulder) * 0.5f, new Vector3(0.11f, dir.magnitude * 0.5f, 0.11f), q.eulerAngles, coat);
-                Part(t, PrimitiveType.Sphere, "Hand", hand, Vector3.one * 0.09f, Vector3.zero, skin);
+                Blob(t, "Arm", (hand + shoulder) * 0.5f, q.eulerAngles, new Vector3(0.055f, dir.magnitude * 0.5f, 0.055f), coat);
+                Blob(t, "Hand", hand, Vector3.zero, new Vector3(0.045f, 0.045f, 0.045f), skin);
             }
         }
 
-        Part(t, PrimitiveType.Capsule, "Torso", new Vector3(0f, 1.18f + yo, 0f), new Vector3(0.38f, 0.34f, 0.24f), Vector3.zero, coat);
-        Part(t, PrimitiveType.Sphere, "Head", new Vector3(0f, 1.63f + yo, bowed ? 0.04f : 0f), new Vector3(0.23f, 0.26f, 0.23f), new Vector3(bowed ? 25f : 0f, 0f, 0f), skin);
-        Part(t, PrimitiveType.Sphere, "Hair", new Vector3(0f, 1.72f + yo, bowed ? 0.02f : -0.01f), new Vector3(0.24f, 0.12f, 0.24f), Vector3.zero, hair);
+        Blob(t, "Torso", new Vector3(0f, 1.18f + yo, 0f), Vector3.zero, new Vector3(0.19f, 0.34f, 0.12f), coat);
+        Blob(t, "Head", new Vector3(0f, 1.63f + yo, bowed ? 0.04f : 0f), new Vector3(bowed ? 25f : 0f, 0f, 0f), new Vector3(0.115f, 0.13f, 0.115f), skin);
+        Blob(t, "Hair", new Vector3(0f, 1.72f + yo, bowed ? 0.02f : -0.01f), Vector3.zero, new Vector3(0.12f, 0.06f, 0.12f), hair);
 
         if (phone)
         {
-            Part(t, PrimitiveType.Cube, "Phone", new Vector3(0f, 1.28f + yo, 0.31f), new Vector3(0.07f, 0.14f, 0.012f), new Vector3(-20f, 0f, 0f), phoneMat);
-            Part(t, PrimitiveType.Cube, "Screen", new Vector3(0f, 1.28f + yo, 0.303f), new Vector3(0.06f, 0.12f, 0.004f), new Vector3(-20f, 0f, 0f), screenMat);
+            Slab(t, "Phone", new Vector3(0f, 1.28f + yo, 0.31f), new Vector3(-20f, 0f, 0f), new Vector3(0.07f, 0.14f, 0.012f), phoneMat);
+            Slab(t, "Screen", new Vector3(0f, 1.28f + yo, 0.303f), new Vector3(-20f, 0f, 0f), new Vector3(0.06f, 0.12f, 0.004f), screenMat);
         }
         if (paper)
         {
-            Part(t, PrimitiveType.Cube, "Newspaper", new Vector3(0f, 1.3f + yo, 0.3f), new Vector3(0.46f, 0.34f, 0.012f), new Vector3(-12f, 0f, 0f), paperMat);
-            Part(t, PrimitiveType.Cube, "Headline", new Vector3(0f, 1.4f + yo, 0.293f), new Vector3(0.38f, 0.04f, 0.004f), new Vector3(-12f, 0f, 0f), ink);
+            Slab(t, "Newspaper", new Vector3(0f, 1.3f + yo, 0.3f), new Vector3(-12f, 0f, 0f), new Vector3(0.46f, 0.34f, 0.012f), paperMat);
+            Slab(t, "Headline", new Vector3(0f, 1.4f + yo, 0.293f), new Vector3(-12f, 0f, 0f), new Vector3(0.38f, 0.04f, 0.004f), ink);
             for (int k = 0; k < 2; k++)
             {
-                Part(t, PrimitiveType.Cube, "Text", new Vector3(0f, 1.31f - k * 0.07f + yo, 0.293f), new Vector3(0.38f, 0.014f, 0.004f), new Vector3(-12f, 0f, 0f), ink);
+                Slab(t, "Text", new Vector3(0f, 1.31f - k * 0.07f + yo, 0.293f), new Vector3(-12f, 0f, 0f), new Vector3(0.38f, 0.014f, 0.004f), ink);
             }
         }
 
