@@ -67,12 +67,23 @@ public sealed class MashhadCorridorDirector : MonoBehaviour
             ClearAll();
         }
 
+        AttachPlayerPose();
+
         float z = player.position.z;
         if (z < lastPlayerZ - 150f) ClearAll();
         lastPlayerZ = z;
 
         ManageSegments(z);
         ProcessRoots();
+    }
+
+    private void AttachPlayerPose()
+    {
+        CharacterAnimator anim = player.GetComponentInChildren<CharacterAnimator>();
+        if (anim != null && anim.GetComponent<MashhadPlayerPose>() == null)
+        {
+            anim.gameObject.AddComponent<MashhadPlayerPose>();
+        }
     }
 
     private void ManageSegments(float z)
@@ -109,6 +120,7 @@ public sealed class MashhadCorridorDirector : MonoBehaviour
         pending.nextStep++;
         if (pending.nextStep < MashhadCityBuilder.StepCount) return;
 
+        MashhadRoadPatch.Build(pending.batch, pending.index);
         GameObject root = pending.batch.Build("MR_Corridor_Segment_" + pending.index, transform, false);
         MashhadCityBuilder.AddWalkers(root.transform, pending.index);
         built[pending.index] = root;

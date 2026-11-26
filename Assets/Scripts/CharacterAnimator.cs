@@ -56,6 +56,12 @@ public sealed class CharacterAnimator : MonoBehaviour
 
     public bool IsReady { get; private set; }
 
+    /// <summary>The state that is currently active (read-only).</summary>
+    public CharacterState State
+    {
+        get { return current; }
+    }
+
     /// <summary>Multiplies the playback speed of the looping run clip (1 = authored speed).</summary>
     public float RunSpeedScale { get; set; } = 1f;
 
