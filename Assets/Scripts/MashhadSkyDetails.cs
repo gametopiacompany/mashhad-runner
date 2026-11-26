@@ -3,38 +3,51 @@ using UnityEngine;
 using UnityEngine.Rendering;
 
 /// <summary>
-/// Replaces the horizon shrine silhouette with a richer one (ribbed dome, tiled iwan, banded minarets, arcade with
-/// lit arches) and adds a flock of pigeons circling its dome. Attaches to the sky built by MashhadSkyEnvironment.
-/// Visual only.
+/// Horizon shrine in the style of the Imam Reza shrine: a lit golden ribbed dome with two golden minarets beside it,
+/// a golden tiled iwan, turquoise bands and a warm arcade, plus a flock of pigeons circling the dome. If a texture
+/// named Resources/MashhadSky/SunsetPanorama (ordinary LDR equirectangular image) exists, it is used as the sky
+/// background on top of the generated gradient. Attaches to the sky built by MashhadSkyEnvironment. Visual only.
 /// </summary>
 public sealed class MashhadSkyDetails : MonoBehaviour
 {
     private const float ShrineAngle = Mathf.PI * 0.5f;
     private const float ShrineRadius = 265f;
-    private const float Scale = 0.7f;
+    private const float Scale = 0.64f;
+    private const float PanoramaRadius = 440f;
     private const int BirdCount = 16;
 
     private static readonly Color Haze = new Color(0.93f, 0.64f, 0.44f, 1f);
-    private static readonly Color Dark = new Color(0.20f, 0.12f, 0.16f, 1f);
-    private static readonly Color TileC = new Color(0.08f, 0.30f, 0.34f, 1f);
-    private static readonly Color TileLight = new Color(0.12f, 0.46f, 0.50f, 1f);
-    private static readonly Color GoldTop = new Color(1f, 0.76f, 0.34f, 1f);
-    private static readonly Color GoldDark = new Color(0.52f, 0.32f, 0.18f, 1f);
-    private static readonly Color RibColor = new Color(0.40f, 0.24f, 0.13f, 1f);
-    private static readonly Color Warm = new Color(1f, 0.78f, 0.42f, 1f);
-    private static readonly Color WarmDim = new Color(0.85f, 0.55f, 0.28f, 1f);
+    private static readonly Color WallCream = new Color(0.97f, 0.89f, 0.72f, 1f);
+    private static readonly Color GoldBright = new Color(1f, 0.84f, 0.38f, 1f);
+    private static readonly Color GoldMid = new Color(0.92f, 0.68f, 0.24f, 1f);
+    private static readonly Color GoldShadow = new Color(0.60f, 0.38f, 0.14f, 1f);
+    private static readonly Color TileC = new Color(0.10f, 0.52f, 0.58f, 1f);
+    private static readonly Color TileLight = new Color(0.30f, 0.76f, 0.80f, 1f);
+    private static readonly Color Warm = new Color(1f, 0.86f, 0.5f, 1f);
+    private static readonly Color WarmDim = new Color(0.95f, 0.62f, 0.3f, 1f);
+    private static readonly Color Recess = new Color(0.36f, 0.22f, 0.18f, 1f);
+    private static readonly Color RibColor = new Color(0.62f, 0.4f, 0.16f, 1f);
     private static readonly Color Cream = new Color(0.98f, 0.94f, 0.88f, 1f);
+
+    private static readonly float[] PanoramaElevations = { -2f, 4f, 10f, 16f, 24f, 34f, 46f, 60f, 75f, 90f };
 
     private sealed class MeshBuilder
     {
         public readonly List<Vector3> vertices = new List<Vector3>();
         public readonly List<Color> colors = new List<Color>();
+        public readonly List<Vector2> uvs = new List<Vector2>();
         public readonly List<int> triangles = new List<int>();
 
         public int Add(Vector3 position, Color color)
         {
+            return AddUv(position, color, Vector2.zero);
+        }
+
+        public int AddUv(Vector3 position, Color color, Vector2 uv)
+        {
             vertices.Add(position);
             colors.Add(color);
+            uvs.Add(uv);
             return vertices.Count - 1;
         }
 
@@ -70,6 +83,7 @@ public sealed class MashhadSkyDetails : MonoBehaviour
             mesh.indexFormat = IndexFormat.UInt32;
             mesh.SetVertices(vertices);
             mesh.SetColors(colors);
+            mesh.SetUVs(0, uvs);
             mesh.SetTriangles(triangles, 0);
             mesh.RecalculateBounds();
             return mesh;
@@ -143,12 +157,64 @@ public sealed class MashhadSkyDetails : MonoBehaviour
         inward = new Vector3(-origin.x, 0f, -origin.z).normalized;
 
         skyRoot = sr;
+        Texture2D panorama = Resources.Load<Texture2D>("MashhadSky/SunsetPanorama");
+        if (panorama != null)
+        {
+            panorama.wrapMode = TextureWrapMode.Repeat;
+            Transform oldDome = sr.Find("Sky_Dome");
+            if (oldDome != null)
+            {
+                MeshRenderer oldRenderer = oldDome.GetComponent<MeshRenderer>();
+                if (oldRenderer != null) oldRenderer.sharedMaterial.renderQueue = 999;
+            }
+            Material panoramaMaterial = CreateMaterial(shader, "MR_Sky_Panorama", 1000);
+            panoramaMaterial.mainTexture = panorama;
+            CreatePart("Sky_Panorama", BuildPanorama(), panoramaMaterial, sr);
+        }
+
         Transform old = sr.Find("Sky_Shrine");
         if (old != null) old.gameObject.SetActive(false);
 
         CreatePart("Sky_Shrine_Detail", BuildShrine(), CreateMaterial(shader, "MR_Sky_Shrine_Detail", 1008), sr);
         BuildFlock(shader, sr);
         built = true;
+    }
+
+    private Mesh BuildPanorama()
+    {
+        var m = new MeshBuilder();
+        int rings = PanoramaElevations.Length;
+        const int segments = 72;
+        for (int r = 0; r < rings; r++)
+        {
+            float elevation = PanoramaElevations[r];
+            float radians = elevation * Mathf.Deg2Rad;
+            for (int s = 0; s <= segments; s++)
+            {
+                float angle = s * Mathf.PI * 2f / segments;
+                Vector3 p = new Vector3(
+                    Mathf.Cos(radians) * Mathf.Cos(angle),
+                    Mathf.Sin(radians),
+                    Mathf.Cos(radians) * Mathf.Sin(angle)) * PanoramaRadius;
+                Vector2 uv = new Vector2(angle / (Mathf.PI * 2f) + 0.25f, (elevation + 90f) / 180f);
+                m.AddUv(p, Color.white, uv);
+            }
+        }
+
+        int stride = segments + 1;
+        for (int r = 0; r < rings - 1; r++)
+        {
+            for (int s = 0; s < segments; s++)
+            {
+                int i0 = r * stride + s;
+                int i1 = i0 + 1;
+                int i2 = i0 + stride;
+                int i3 = i2 + 1;
+                m.Triangle(i0, i2, i1);
+                m.Triangle(i1, i2, i3);
+            }
+        }
+        return Register(m.ToMesh("MR_Sky_Panorama"));
     }
 
     private Vector3 P(float x, float y)
@@ -226,71 +292,78 @@ public sealed class MashhadSkyDetails : MonoBehaviour
 
     private void Minaret(MeshBuilder m, float x)
     {
-        Rect(m, x - 2.8f, -20f, x + 2.8f, 50f, Haze, TileC);
-        for (float y = 2f; y < 46f; y += 11f)
+        Rect(m, x - 2.8f, -20f, x + 2.8f, 56f, GoldShadow, GoldBright);
+        for (float y = 4f; y < 54f; y += 9f)
         {
-            Rect(m, x - 2.9f, y, x + 2.9f, y + 1.1f, GoldDark, GoldTop);
-            Rect(m, x - 0.5f, y + 4f, x + 0.5f, y + 7f, Warm, Warm);
+            Rect(m, x - 2.95f, y, x + 2.95f, y + 1f, GoldShadow, GoldMid);
         }
-        Rect(m, x - 5f, 50f, x + 5f, 52f, GoldDark, GoldTop);
-        Rect(m, x - 2.2f, 52f, x + 2.2f, 60f, TileC, TileLight);
-        Rect(m, x - 3.6f, 60f, x + 3.6f, 61.6f, GoldDark, GoldTop);
-        Rect(m, x - 1.6f, 61.6f, x + 1.6f, 66f, TileC, TileLight);
-        Rect(m, x - 0.6f, 62.6f, x + 0.6f, 65f, Warm, Warm);
-        m.Tri(P(x - 2.4f, 66f), P(x, 73f), P(x + 2.4f, 66f), GoldDark, GoldTop, GoldDark);
-        Disc(m, x, 73.8f, 0.9f, 0.9f, GoldTop, GoldTop, 8);
-        Rect(m, x - 0.25f, 74f, x + 0.25f, 80f, GoldTop, GoldTop);
+        Rect(m, x - 2.85f, 18f, x + 2.85f, 22.5f, TileC, TileLight);
+        Rect(m, x - 2.85f, 36f, x + 2.85f, 40.5f, TileC, TileLight);
+        Rect(m, x - 5.2f, 56f, x + 5.2f, 58f, GoldShadow, GoldMid);
+        Rect(m, x - 4.2f, 58f, x + 4.2f, 59.2f, TileC, TileLight);
+        Rect(m, x - 2.2f, 59.2f, x + 2.2f, 66f, GoldMid, GoldBright);
+        Rect(m, x - 3.6f, 66f, x + 3.6f, 67.6f, GoldShadow, GoldMid);
+        Rect(m, x - 1.7f, 67.6f, x + 1.7f, 72f, GoldMid, GoldBright);
+        Rect(m, x - 0.6f, 68.6f, x + 0.6f, 71f, Warm, Warm);
+        m.Tri(P(x - 2.5f, 72f), P(x, 79f), P(x + 2.5f, 72f), GoldMid, GoldBright, GoldMid);
+        Disc(m, x, 79.8f, 1f, 1f, GoldBright, GoldBright, 8);
+        Rect(m, x - 0.25f, 80.5f, x + 0.25f, 85f, GoldBright, GoldBright);
     }
 
     private Mesh BuildShrine()
     {
         var m = new MeshBuilder();
-        Disc(m, 0f, 52f, 150f, 120f, new Color(1f, 0.82f, 0.5f, 0.5f), new Color(1f, 0.82f, 0.5f, 0f), 32);
+        Disc(m, 0f, 55f, 170f, 130f, new Color(1f, 0.88f, 0.55f, 0.6f), new Color(1f, 0.88f, 0.55f, 0f), 32);
 
-        Rect(m, -100f, -20f, 100f, 6f, Haze, Dark);
-        Rect(m, -32f, -20f, 32f, 38f, Haze, Dark);
+        Rect(m, -100f, -20f, 100f, 8f, Haze, WallCream);
+        Rect(m, -34f, -20f, 34f, 40f, Haze, WallCream);
+        Rect(m, -34f, 27f, 34f, 30f, TileC, TileLight);
         for (int sx = -1; sx <= 1; sx += 2)
         {
-            Rect(m, sx * 32f, -20f, sx * 60f, 26f, Haze, Dark);
+            Rect(m, sx * 34f, -20f, sx * 64f, 28f, Haze, WallCream);
+            Rect(m, sx * 34f, 22f, sx * 64f, 25f, TileC, TileLight);
+            Rect(m, sx * 34f, 28f, sx * 64f, 29.5f, GoldShadow, GoldMid);
             for (int row = 0; row < 2; row++)
             {
-                float y = 8f + row * 8f;
+                float y = 4f + row * 8f;
                 for (int i = 0; i < 6; i++)
                 {
-                    float x = sx * (36f + i * 4.2f);
-                    Rect(m, x - 0.8f, y, x + 0.8f, y + 4f, Warm, Warm);
+                    float x = sx * (38f + i * 4.2f);
+                    Rect(m, x - 0.9f, y, x + 0.9f, y + 4.5f, Warm, WarmDim);
                 }
             }
-            float dx = sx * 46f;
-            Rect(m, dx - 6f, 26f, dx + 6f, 31f, TileC, TileC);
-            Dome(m, dx, 31f, 8f, 9f, GoldDark, GoldTop);
-            Rect(m, dx - 0.25f, 40f, dx + 0.25f, 44f, GoldTop, GoldTop);
+            float dx = sx * 49f;
+            Rect(m, dx - 6f, 29.5f, dx + 6f, 35f, TileC, TileLight);
+            Dome(m, dx, 35f, 8.5f, 10f, GoldMid, GoldBright);
+            Rect(m, dx - 0.25f, 45f, dx + 0.25f, 49f, GoldBright, GoldBright);
         }
 
-        Poly(m, GoldTop, new float[] { -12.5f, 6f, -12.5f, 30f, 0f, 40f, 12.5f, 30f, 12.5f, 6f });
-        Poly(m, TileC, new float[] { -10.5f, 6f, -10.5f, 29.5f, 0f, 38.5f, 10.5f, 29.5f, 10.5f, 6f });
-        Poly(m, Dark, new float[] { -7f, 8f, -7f, 28f, 0f, 34f, 7f, 28f, 7f, 8f });
-        Rect(m, -7f, 8f, 7f, 12f, Warm, Warm);
-        for (int i = -2; i <= 2; i++)
-        {
-            Rect(m, i * 2.6f - 0.7f, 24f, i * 2.6f + 0.7f, 27f, GoldDark, GoldTop);
-        }
-
-        Rect(m, -15f, 38f, 15f, 50f, TileC, TileLight);
+        Poly(m, GoldBright, new float[] { -14f, 6f, -14f, 34f, 0f, 46f, 14f, 34f, 14f, 6f });
+        Poly(m, GoldMid, new float[] { -12f, 6f, -12f, 33f, 0f, 44f, 12f, 33f, 12f, 6f });
+        Poly(m, TileC, new float[] { -10f, 6f, -10f, 32f, 0f, 41.5f, 10f, 32f, 10f, 6f });
+        Poly(m, Recess, new float[] { -6.5f, 8f, -6.5f, 28f, 0f, 35f, 6.5f, 28f, 6.5f, 8f });
+        Rect(m, -6.5f, 8f, 6.5f, 13f, Warm, WarmDim);
         for (int i = -3; i <= 3; i++)
         {
-            Rect(m, i * 3.6f - 0.8f, 41f, i * 3.6f + 0.8f, 47f, Warm, WarmDim);
+            Rect(m, i * 3.2f - 0.8f, 29f, i * 3.2f + 0.8f, 33f, GoldMid, GoldBright);
         }
-        Rect(m, -15.5f, 50f, 15.5f, 51.5f, GoldDark, GoldTop);
-        Dome(m, 0f, 51.5f, 17f, 19f, GoldDark, GoldTop);
-        float[] ribs = { -1.1f, -0.7f, -0.3f, 0f, 0.3f, 0.7f, 1.1f };
-        for (int i = 0; i < ribs.Length; i++) Meridian(m, 0f, 51.5f, 17f, 19f, ribs[i], RibColor);
-        Rect(m, -1.6f, 70.5f, 1.6f, 72f, GoldDark, GoldTop);
-        Disc(m, 0f, 73.2f, 1.3f, 1.3f, GoldTop, GoldTop, 10);
-        Rect(m, -0.3f, 74f, 0.3f, 79f, GoldTop, GoldTop);
 
-        Minaret(m, -72f);
-        Minaret(m, 72f);
+        Rect(m, -16f, 40f, 16f, 54f, TileC, TileLight);
+        for (int i = -3; i <= 3; i++)
+        {
+            Rect(m, i * 3.8f - 0.9f, 43f, i * 3.8f + 0.9f, 50f, Warm, WarmDim);
+        }
+        Rect(m, -16.5f, 54f, 16.5f, 55.8f, GoldShadow, GoldMid);
+        Dome(m, 0f, 55.8f, 19f, 21f, GoldMid, GoldBright);
+        float[] ribs = { -1.2f, -0.8f, -0.4f, 0f, 0.4f, 0.8f, 1.2f };
+        for (int i = 0; i < ribs.Length; i++) Meridian(m, 0f, 55.8f, 19f, 21f, ribs[i], RibColor);
+        Disc(m, -6f, 68f, 5f, 8f, new Color(1f, 0.96f, 0.75f, 0.7f), new Color(1f, 0.96f, 0.75f, 0f), 14);
+        Rect(m, -1.8f, 76.8f, 1.8f, 78.4f, GoldShadow, GoldMid);
+        Disc(m, 0f, 79.6f, 1.5f, 1.5f, GoldBright, GoldBright, 10);
+        Rect(m, -0.3f, 81f, 0.3f, 86f, GoldBright, GoldBright);
+
+        Minaret(m, -41f);
+        Minaret(m, 41f);
 
         for (int i = -9; i <= 9; i++)
         {
@@ -325,8 +398,8 @@ public sealed class MashhadSkyDetails : MonoBehaviour
             birds[i] = bird;
             phases[i] = i * 0.7f;
             speeds[i] = 0.16f + (i % 4) * 0.03f;
-            radii[i] = 35f + (i % 5) * 9f;
-            heights[i] = 6f + (i % 4) * 6f;
+            radii[i] = 32f + (i % 5) * 8f;
+            heights[i] = 4f + (i % 4) * 5f;
         }
         AnimateFlock();
     }
@@ -334,7 +407,7 @@ public sealed class MashhadSkyDetails : MonoBehaviour
     private void AnimateFlock()
     {
         if (birds == null) return;
-        Vector3 center = P(0f, 62f);
+        Vector3 center = P(0f, 68f);
         for (int i = 0; i < birds.Length; i++)
         {
             if (birds[i] == null) continue;
