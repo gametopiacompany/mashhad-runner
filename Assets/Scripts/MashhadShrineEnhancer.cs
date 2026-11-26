@@ -164,7 +164,7 @@ public sealed class MashhadShrineEnhancer : MonoBehaviour
         glintRenderer.shadowCastingMode = ShadowCastingMode.Off;
         glintRenderer.receiveShadows = false;
 
-        const int count = 8;
+        const int count = 12;
         var birds = new Transform[count];
         var leftWings = new Transform[count];
         var rightWings = new Transform[count];
@@ -172,7 +172,7 @@ public sealed class MashhadShrineEnhancer : MonoBehaviour
         {
             var bird = new GameObject("Pigeon").transform;
             bird.SetParent(lifeObject.transform, false);
-            bird.localScale = Vector3.one * 2.4f;
+            bird.localScale = Vector3.one * 4.2f;
             Part(bird, PrimitiveType.Cube, Vector3.zero, new Vector3(0.16f, 0.13f, 0.34f), pigeonBody);
 
             var left = new GameObject("Wing_Pivot_L").transform;
