@@ -1,16 +1,28 @@
+using System.Reflection;
 using UnityEngine;
 
 /// <summary>
-/// Procedural jump and slide poses for the controlled character, layered on top of the clip animation.
-/// Legs and arms are rotated around the visual's right axis (found by bone name when possible), the whole body gets
-/// a pitch arc and squash/stretch. If no leg bones are found the original jump clip is used. Visual only.
+/// Jump and slide for the controlled character.
+/// 1) Jump height: RunnerGame moves the player with Lerp(position, target, 12 * dt), which scales the vertical speed
+///    down to about a fifth, so the real jump is far lower than the physics suggest. While airborne this script
+///    integrates the jump itself (frame-rate independent, apex about 2.4 m) and writes the height to the player root.
+///    RunnerGame's private vertical velocity is reset on landing so the next jump works. If that field cannot be found
+///    the original jump is left alone.
+/// 2) Pose: procedural leg and arm bending (found by bone name), pitch arc and squash/stretch, and a low backward
+///    slide pose. Visual only apart from the jump height.
 /// </summary>
 public sealed class MashhadPlayerPose : MonoBehaviour
 {
-    private const float AirDuration = 0.85f;
+    private const float JumpSpeed = 9.8f;
+    private const float Gravity = 20f;
+    private const float AirDuration = 2f * JumpSpeed / Gravity;
     private const float LandDuration = 0.2f;
 
+    private static readonly FieldInfo VerticalVelocityField =
+        typeof(RunnerGame).GetField("verticalVelocity", BindingFlags.Instance | BindingFlags.NonPublic);
+
     private CharacterAnimator animator;
+    private RunnerGame game;
     private Transform root;
     private Transform legL;
     private Transform legR;
@@ -21,6 +33,10 @@ public sealed class MashhadPlayerPose : MonoBehaviour
     private Quaternion lastDelta = Quaternion.identity;
     private bool hasApplied;
     private bool wasAirborne;
+    private bool jumping;
+    private float jumpHeight;
+    private float jumpVelocity;
+    private float jumpTime;
     private float airTime;
     private float landTimer;
     private float slideBlend;
@@ -61,10 +77,45 @@ public sealed class MashhadPlayerPose : MonoBehaviour
         if (animator != null) animator.SuppressJump = false;
     }
 
+    private void SimulateJump(float dt)
+    {
+        if (VerticalVelocityField == null) return;
+        Vector3 p = root.position;
+        if (!jumping)
+        {
+            if (p.y <= 0.01f) return;
+            jumping = true;
+            jumpHeight = p.y;
+            jumpVelocity = JumpSpeed;
+            jumpTime = 0f;
+        }
+
+        if (game == null) game = FindObjectOfType<RunnerGame>();
+        jumpTime += dt;
+        jumpVelocity -= Gravity * dt;
+        if (game != null)
+        {
+            float original = (float)VerticalVelocityField.GetValue(game);
+            if (original <= -13.9f) jumpVelocity = Mathf.Min(jumpVelocity, -14f);
+        }
+
+        jumpHeight += jumpVelocity * dt;
+        if (jumpHeight <= 0f && jumpTime > 0.05f)
+        {
+            jumpHeight = 0f;
+            jumping = false;
+            if (game != null) VerticalVelocityField.SetValue(game, 0f);
+        }
+        root.position = new Vector3(p.x, jumpHeight, p.z);
+    }
+
     private void LateUpdate()
     {
         float dt = Time.deltaTime;
-        if (dt <= 0f || root == null || animator == null || !animator.IsReady) return;
+        if (dt <= 0f || root == null) return;
+
+        SimulateJump(dt);
+        if (animator == null || !animator.IsReady) return;
 
         bool airborne = root.position.y > 0.08f;
         if (airborne && !wasAirborne) airTime = 0f;

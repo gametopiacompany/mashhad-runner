@@ -1,49 +1,57 @@
 using UnityEngine;
 
 /// <summary>
-/// Background music generated at runtime (no audio asset, no download): a Shur-style melody on a plucked voice,
-/// a low drone, a bass and a simple frame-drum pattern with a soft echo. It plays while the game scene is active,
-/// ducks when paused, and has a MUSIC on/off button (or the M key). The choice is remembered.
+/// Background music generated at runtime (no audio asset, no download): a fast chase track at 136 BPM with a
+/// four-on-the-floor kick, snare, hats, a rolling pumped bass, an arpeggiated hook in Hijaz mode with echo and a
+/// noise riser before every 8-bar loop. It plays while the game scene is active, ducks when paused, and has a MUSIC
+/// on/off button (or the M key). The choice is remembered.
 /// </summary>
 public sealed class MashhadMusic : MonoBehaviour
 {
     private const int SampleRate = 22050;
     private const string PrefKey = "MashhadMusicEnabled";
-    private const float FullVolume = 0.5f;
+    private const float FullVolume = 0.6f;
     private const float PausedVolume = 0.2f;
 
     private sealed class Track
     {
-        private const double Bpm = 92.0;
-        private const int MaxVoices = 8;
+        private const double Bpm = 136.0;
+        private const int MaxVoices = 10;
         private const float TwoPi = 6.2831853f;
 
-        private static readonly float[] Cents = { 0f, 150f, 300f, 500f, 700f, 800f, 1000f, 1200f, 1350f, 1500f };
-        private static readonly int[][] Phrases =
+        private static readonly float[] LeadCents = { 0f, 100f, 400f, 500f, 700f, 800f, 1000f, 1200f, 1300f, 1600f, 1700f, 1900f, 2000f, 2200f };
+        private static readonly float[] BassCents = { 0f, 100f, 400f, 500f, 700f };
+        private static readonly int[] BassRoots = { 0, 0, 1, 0, 0, 0, 3, 2 };
+        private static readonly bool[] BassHit =
         {
-            new int[] { 4, -1, 5, 4, 3, 2, 3, 1, 0, -1, 1, 2, 3, -1, 2, -1 },
-            new int[] { 4, 5, 6, 5, 4, 3, 4, 2, 3, 4, 3, 2, 1, 0, -1, -1 },
-            new int[] { 7, -1, 6, 5, 4, -1, 5, 4, 3, 2, 3, 4, 2, 1, 0, -1 },
-            new int[] { 0, 1, 2, 3, 2, 1, 2, 0, 1, 2, 3, 4, 3, 2, 1, -1 }
+            true, false, true, true, false, true, false, true,
+            true, false, true, false, true, true, false, true
+        };
+        private static readonly int[][] Hooks =
+        {
+            new int[] { 0, -1, 3, -1, 4, 3, 2, -1, 0, -1, 3, 4, 5, 4, 3, 2 },
+            new int[] { 7, -1, 6, 5, 4, -1, 5, 4, 3, -1, 2, 3, 4, -1, 2, 0 }
         };
 
         private readonly float[] voiceFreq = new float[MaxVoices];
         private readonly float[] voiceTime = new float[MaxVoices];
         private readonly float[] voiceAmp = new float[MaxVoices];
         private readonly int[] voiceKind = new int[MaxVoices];
-        private readonly float[] delay = new float[(int)(SampleRate * 0.31f)];
-        private readonly double samplesPerStep = SampleRate * 60.0 / Bpm / 2.0;
+        private readonly float[] echo = new float[(int)(SampleRate * 60.0 / Bpm / 4.0 * 3.0)];
+        private readonly double samplesPerStep = SampleRate * 60.0 / Bpm / 4.0;
         private double stepCounter;
         private int step;
-        private int delayPos;
-        private float dumTime = 99f;
-        private float dumPhase;
-        private float takTime = 99f;
-        private float takAmp;
-        private float previousNoise;
-        private float dronePhaseA;
-        private float dronePhaseB;
-        private float tremPhase;
+        private int echoPos;
+        private float kickTime = 99f;
+        private float kickPhase;
+        private float snareTime = 99f;
+        private float snareAmp;
+        private float hatTime = 99f;
+        private float hatAmp;
+        private float hatPrevious;
+        private float riserLevel;
+        private float riserPrevious;
+        private float bassFilter;
         private uint noiseState = 22695477u;
 
         public Track()
@@ -52,9 +60,14 @@ public sealed class MashhadMusic : MonoBehaviour
             stepCounter = samplesPerStep;
         }
 
-        private static float NoteFreq(int degree)
+        private static float LeadFreq(int degree)
         {
-            return 293.66f * (float)System.Math.Pow(2.0, Cents[degree] / 1200.0);
+            return 293.66f * (float)System.Math.Pow(2.0, LeadCents[degree] / 1200.0);
+        }
+
+        private static float BassFreq(int index)
+        {
+            return 73.42f * (float)System.Math.Pow(2.0, BassCents[index] / 1200.0);
         }
 
         private float Noise()
@@ -69,7 +82,7 @@ public sealed class MashhadMusic : MonoBehaviour
             float oldest = -1f;
             for (int v = 0; v < MaxVoices; v++)
             {
-                if (voiceTime[v] >= 4f)
+                if (voiceTime[v] >= 3f)
                 {
                     slot = v;
                     break;
@@ -89,23 +102,32 @@ public sealed class MashhadMusic : MonoBehaviour
         private void AdvanceStep()
         {
             int s16 = step % 16;
-            int phrase = (step / 16) % Phrases.Length;
-            int note = Phrases[phrase][s16];
-            if (note >= 0) Trigger(NoteFreq(note), 0.28f, 0);
+            int bar = (step / 16) % 8;
 
-            if (s16 % 8 == 0)
+            if (s16 % 4 == 0 || (bar == 7 && s16 >= 14)) kickTime = 0f;
+            if (s16 == 4 || s16 == 12 || (bar == 7 && s16 >= 13))
             {
-                float bass = ((step / 8) % 4 == 3) ? 110f : 73.42f;
-                Trigger(bass, 0.22f, 1);
+                snareTime = 0f;
+                snareAmp = (bar == 7 && s16 >= 13) ? 0.7f : 1f;
+            }
+            if (s16 % 2 == 0)
+            {
+                hatTime = 0f;
+                hatAmp = (s16 % 4 == 2) ? 1f : 0.6f;
+            }
+            else if (bar >= 4)
+            {
+                hatTime = 0f;
+                hatAmp = 0.35f;
             }
 
-            int d = step % 8;
-            if (d == 0 || d == 3 || d == 4) dumTime = 0f;
-            if (d == 2 || d == 5 || d == 6 || d == 7)
-            {
-                takTime = 0f;
-                takAmp = d == 7 ? 0.5f : 1f;
-            }
+            if (BassHit[s16]) Trigger(BassFreq(BassRoots[bar]), 0.34f, 1);
+
+            int[] hook = Hooks[bar < 4 ? 0 : 1];
+            int note = hook[s16];
+            if (note >= 0) Trigger(LeadFreq(note), 0.16f, 0);
+
+            riserLevel = bar == 7 ? (s16 + 1) / 16f : 0f;
             step++;
         }
 
@@ -121,70 +143,92 @@ public sealed class MashhadMusic : MonoBehaviour
                 }
                 stepCounter += 1.0;
 
-                float s = 0f;
+                float duck = 1f;
+                if (kickTime < 0.25f) duck = 1f - 0.7f * (float)System.Math.Exp(-kickTime * 14f);
+
+                float leadSum = 0f;
+                float bassSum = 0f;
                 for (int v = 0; v < MaxVoices; v++)
                 {
                     float t = voiceTime[v];
-                    if (t >= 4f) continue;
+                    if (t >= 3f) continue;
                     float ph = TwoPi * voiceFreq[v] * t;
-                    float env;
-                    float tone;
                     if (voiceKind[v] == 0)
                     {
-                        env = (float)System.Math.Exp(-t * 4.2f);
-                        tone = (float)System.Math.Sin(ph)
-                            + 0.45f * (float)System.Math.Sin(2f * ph) * (float)System.Math.Exp(-t * 3f)
-                            + 0.2f * (float)System.Math.Sin(3f * ph) * (float)System.Math.Exp(-t * 7f);
+                        float env = (float)System.Math.Exp(-t * 8f);
+                        if (env < 0.001f)
+                        {
+                            voiceTime[v] = 99f;
+                            continue;
+                        }
+                        float tone = (float)System.Math.Sin(ph)
+                            + 0.5f * (float)System.Math.Sin(2f * ph)
+                            + 0.33f * (float)System.Math.Sin(3f * ph)
+                            + 0.2f * (float)System.Math.Sin(5f * ph);
+                        leadSum += voiceAmp[v] * env * tone;
                     }
                     else
                     {
-                        env = (1f - (float)System.Math.Exp(-t * 30f)) * (float)System.Math.Exp(-t * 1.4f);
-                        tone = (float)System.Math.Sin(ph) + 0.3f * (float)System.Math.Sin(2f * ph);
+                        float env = (1f - (float)System.Math.Exp(-t * 80f)) * (float)System.Math.Exp(-t * 4.5f);
+                        if (env < 0.001f && t > 0.05f)
+                        {
+                            voiceTime[v] = 99f;
+                            continue;
+                        }
+                        float tone = (float)System.Math.Sin(ph)
+                            + 0.5f * (float)System.Math.Sin(2f * ph)
+                            + 0.33f * (float)System.Math.Sin(3f * ph)
+                            + 0.25f * (float)System.Math.Sin(4f * ph);
+                        bassSum += voiceAmp[v] * env * tone;
                     }
-                    if (env < 0.0008f && t > 0.05f)
-                    {
-                        voiceTime[v] = 99f;
-                        continue;
-                    }
-                    s += voiceAmp[v] * env * tone;
                     voiceTime[v] = t + dt;
                 }
 
-                dronePhaseA += TwoPi * 73.42f * dt;
-                if (dronePhaseA > TwoPi) dronePhaseA -= TwoPi;
-                dronePhaseB += TwoPi * 110f * dt;
-                if (dronePhaseB > TwoPi) dronePhaseB -= TwoPi;
-                tremPhase += TwoPi * 0.12f * dt;
-                if (tremPhase > TwoPi) tremPhase -= TwoPi;
-                float trem = 0.7f + 0.3f * (float)System.Math.Sin(tremPhase);
-                s += 0.045f * trem * ((float)System.Math.Sin(dronePhaseA) + 0.6f * (float)System.Math.Sin(dronePhaseB));
+                bassFilter += (bassSum - bassFilter) * 0.3f;
+                float s = bassFilter * duck + leadSum * (0.5f + 0.5f * duck);
 
-                if (dumTime < 0.45f)
+                float delayed = echo[echoPos];
+                echo[echoPos] = leadSum + delayed * 0.35f;
+                echoPos++;
+                if (echoPos >= echo.Length) echoPos = 0;
+                s += delayed * 0.45f;
+
+                if (kickTime < 0.35f)
                 {
-                    float env = (float)System.Math.Exp(-dumTime * 12f);
-                    float freq = 58f + 95f * (float)System.Math.Exp(-dumTime * 22f);
-                    dumPhase += TwoPi * freq * dt;
-                    if (dumPhase > TwoPi) dumPhase -= TwoPi;
-                    s += 0.5f * env * (float)System.Math.Sin(dumPhase);
-                    dumTime += dt;
+                    float env = (float)System.Math.Exp(-kickTime * 10f);
+                    float freq = 48f + 120f * (float)System.Math.Exp(-kickTime * 28f);
+                    kickPhase += TwoPi * freq * dt;
+                    if (kickPhase > TwoPi) kickPhase -= TwoPi;
+                    s += 0.85f * env * (float)System.Math.Sin(kickPhase);
+                    kickTime += dt;
                 }
 
-                if (takTime < 0.15f)
+                if (snareTime < 0.2f)
                 {
-                    float env = (float)System.Math.Exp(-takTime * 42f);
+                    float env = (float)System.Math.Exp(-snareTime * 22f);
+                    s += snareAmp * env * (0.3f * Noise() + 0.22f * (float)System.Math.Sin(TwoPi * 190f * snareTime));
+                    snareTime += dt;
+                }
+
+                if (hatTime < 0.05f)
+                {
+                    float env = (float)System.Math.Exp(-hatTime * 80f);
                     float n = Noise();
-                    float hp = n - previousNoise * 0.85f;
-                    previousNoise = n;
-                    s += 0.16f * takAmp * env * hp;
-                    takTime += dt;
+                    float hp = n - hatPrevious * 0.9f;
+                    hatPrevious = n;
+                    s += 0.12f * hatAmp * env * hp;
+                    hatTime += dt;
                 }
 
-                float echo = delay[delayPos];
-                float mixed = s + echo * 0.3f;
-                delay[delayPos] = s + echo * 0.38f;
-                delayPos++;
-                if (delayPos >= delay.Length) delayPos = 0;
-                data[i] = (float)System.Math.Tanh(mixed * 1.1f) * 0.8f;
+                if (riserLevel > 0f)
+                {
+                    float n = Noise();
+                    float hp = n - riserPrevious * 0.8f;
+                    riserPrevious = n;
+                    s += 0.1f * riserLevel * riserLevel * hp;
+                }
+
+                data[i] = (float)System.Math.Tanh(s * 1.2f) * 0.85f;
             }
         }
     }
