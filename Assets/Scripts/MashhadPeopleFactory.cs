@@ -21,6 +21,14 @@ public static class MashhadPeopleFactory
         return MashhadMaterials.Get(name, color, 0.02f, 0.2f, emission);
     }
 
+    private static Transform Pivot(Transform parent, string name, Vector3 localPosition)
+    {
+        var go = new GameObject(name);
+        go.transform.SetParent(parent, false);
+        go.transform.localPosition = localPosition;
+        return go.transform;
+    }
+
     private static void Part(Transform parent, PrimitiveType shape, string name, Vector3 position, Vector3 scale, Vector3 euler, Material material)
     {
         var go = GameObject.CreatePrimitive(shape);
@@ -61,6 +69,7 @@ public static class MashhadPeopleFactory
 
         for (int side = -1; side <= 1; side += 2)
         {
+            string tag = side < 0 ? "L" : "R";
             if (seated)
             {
                 Part(t, PrimitiveType.Capsule, "Thigh", new Vector3(side * 0.1f, 0.05f, 0.22f), new Vector3(0.16f, 0.22f, 0.16f), new Vector3(90f, 0f, 0f), trousers);
@@ -69,14 +78,16 @@ public static class MashhadPeopleFactory
             }
             else
             {
-                Part(t, PrimitiveType.Capsule, "Leg", new Vector3(side * 0.1f, 0.46f, 0f), new Vector3(0.16f, 0.43f, 0.16f), Vector3.zero, trousers);
-                Part(t, PrimitiveType.Cube, "Shoe", new Vector3(side * 0.1f, 0.05f, 0.05f), new Vector3(0.14f, 0.08f, 0.26f), Vector3.zero, shoe);
+                Transform legPivot = Pivot(t, "LegPivot_" + tag, new Vector3(side * 0.1f, 0.9f, 0f));
+                Part(legPivot, PrimitiveType.Capsule, "Leg", new Vector3(0f, -0.44f, 0f), new Vector3(0.16f, 0.43f, 0.16f), Vector3.zero, trousers);
+                Part(legPivot, PrimitiveType.Cube, "Shoe", new Vector3(0f, -0.85f, 0.05f), new Vector3(0.14f, 0.08f, 0.26f), Vector3.zero, shoe);
             }
 
             Vector3 shoulder = new Vector3(side * 0.25f, 1.45f + yo, 0f);
             if (!bowed)
             {
-                Part(t, PrimitiveType.Capsule, "Arm", new Vector3(side * 0.25f, 1.2f + yo, 0f), new Vector3(0.11f, 0.3f, 0.11f), Vector3.zero, coat);
+                Transform armPivot = Pivot(t, "ArmPivot_" + tag, shoulder);
+                Part(armPivot, PrimitiveType.Capsule, "Arm", new Vector3(0f, -0.25f, 0f), new Vector3(0.11f, 0.3f, 0.11f), Vector3.zero, coat);
             }
             else
             {
@@ -122,6 +133,7 @@ public static class MashhadPeopleFactory
         motion.travelDirection = Vector3.forward;
         motion.travelDistance = distance;
         motion.speed = 0.28f + (Mathf.Abs(variant) % 3) * 0.05f;
+        person.AddComponent<MashhadWalkCycle>();
         return person;
     }
 }
